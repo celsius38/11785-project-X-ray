@@ -10,4 +10,5 @@ def data_preprocess(directory_name):
       				C is 1 as black-white, W for width and H for height)
     """
     # TODO:
-	return None
+    # some comments
+    return None
