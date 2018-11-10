@@ -1,11 +1,9 @@
 import torch
 import torch.nn as nn 
-from torch.utils.data import DataLoader
-import torch
-import torch.nn as nn 
 from torch.utils.data.dataset import Dataset
 from torch.utils.data import DataLoader
 import numpy as np
+from preprocess import get_traindata, get_valdata, get_testdata
 
 args = {}
 args["batch_size"] = 20
@@ -149,8 +147,6 @@ def train(net, epoch_id, train_set, criterion, optimizer):
 def val(net, val_set):
     global args
     net = net.eval()
-    # TODO: validation returning some accuracy measure
-    network.eval()
     with torch.no_grad():
         total_iou = 0
         total_sample = 0
@@ -215,7 +211,6 @@ def test(net, test_set):
         f.write("Image ID, Predicted Label\n")
     with open("pred.csv", "ab") as f:
         np.savetxt(f, outputs, delimiter=',', fmt = "%s")
-
 
 
 
