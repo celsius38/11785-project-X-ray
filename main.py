@@ -41,10 +41,6 @@ def get_testdata():
     pass
 
 
-
-
-
-
 def conv3x3(in_planes, out_planes, stride=1):
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)    
@@ -76,34 +72,7 @@ class BasicBlock(nn.Module):
 
         return out
 
-class SpeechNetwork(nn.Module):
-  def __init__(self): 
-    super(SpeechNetwork, self).__init__()        
-    self.network = Sequential(
-      nn.Conv2d(1,32,kernel_size = 5,padding = 0,stride = 2,bias = False),
-      nn.ELU(inplace=True),
-      BasicBlock(32,32), 
-      nn.Conv2d(32,64,kernel_size = 5,padding = 0,stride = 2,bias = False),
-      nn.ELU(inplace=True),
-      BasicBlock(64,64),  
-      nn.Conv2d(64,128,kernel_size = 5,padding = 0,stride = 2,bias = False),
-      nn.ELU(inplace=True),
-      BasicBlock(128,128), 
-      nn.Conv2d(128,512,kernel_size = 5,padding = 0,stride = 2,bias = False),
-      nn.ELU(inplace=True),
-      BasicBlock(512,512),
-      nn.AdaptiveAvgPool2d((2,2))
-      Flatten()
-      nn.Linear(2048,15,bias = False)
 
-    )
-
-  def forward(self, x):
-    final_classes = self.network(x)
-    return final_classes
-
-
-  
 class XrayNet(nn.Module):
     """
   tunable hyper parameters: embeddings
