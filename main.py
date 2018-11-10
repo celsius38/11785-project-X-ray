@@ -90,7 +90,7 @@ class XrayNet(nn.Module):
                 nn.ELU(inplace=True),
                 BasicBlock(512,512),
                 nn.AdaptiveAvgPool2d((2,2)),
-                Flatten(),
+                Flatten(), 2
                 nn.Linear(args["embed_size"], 15 ,bias = False)
                 )
 
