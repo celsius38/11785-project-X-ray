@@ -4,6 +4,7 @@ import pandas as pd
 import cv2
 import os.path
 from sklearn.preprocessing import MultiLabelBinarizer
+from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
 
@@ -33,45 +34,42 @@ class CustomDataset(Dataset):
         return (d,l)
 
 
-def get_traindata():
+def get_traindata(batch_size, num_workers):
     """
     @Return:
         DataLoader of train data with index i
     """ 
-    global args
     data, label = np.load("data/train.npy"), np.load("data/train_label.npy")
     return DataLoader(  CustomDataset(data, label), 
-                        batch_size = args["batch_size"], 
+                        batch_size = batch_size,
                         shuffle = True, 
                         drop_last = True,
-                        num_workers = args["num_workers"] )
+                        num_workers = num_workers)
 
-def get_valdata():
+def get_valdata(batch_size, num_workers):
     """
     @Param: 
     @Return:
         DataLoader of validation data
     """
-    global args
     data, label = np.load("data/val.npy"), np.load("data/val_label.npy")
     return DataLoader(  CustomDataset(data, label), 
-                        batch_size = args["batch_size"], 
+                        batch_size = batch_size,
                         shuffle = False,
                         drop_last = False,
-                        num_workers = args["num_workers"] )
+                        num_workers = num_workers )
 
-def get_testdata():
+def get_testdata(batch_size, num_workers):
     """
     @Return:
         DataLoader of test data
     """
-    global args
     data, label = np.load("data/test.npy"), np.load("data/test_label.npy")
     return DataLoader(  CustomDataset(data, label), 
-                        batch_size = args["batch_size"], 
+                        batch_size = batch_size,
                         shuffle = False,
                         drop_last = False,
-                        num_workers = args["num_workers"] )
+                        num_workers = num_workers )
 
 
 def get_id_label_list(): 

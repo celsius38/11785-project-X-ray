@@ -2,11 +2,19 @@ import torch
 import torch.nn as nn 
 import torch.nn.functional as F
 from torch.utils.data.dataset import Dataset
-from torch.utils.data import DataLoader
 import numpy as np
-from preprocess import get_traindata, get_valdata, get_testdata
+import preprocess
 
 args = {}
+args["batch_size"] = 20
+args["epochs"] = 20
+args["num_workers"] = 4
+args["embed_size"] = 2048
+args["gpu"] = True
+if (not torch.cuda.is_available()): args["gpu"] = False
+args["null_percent"] = 0.2 # specify the percentage of No finding in the dataset
+args["label_cutoff"] = 0.3 # minimum probability of a softmax output for a valid label
+args["k"] = 3 # select top k softmax outputs as labels
 
 # one hot encoding mapping
 OHE_MAPPING = ['Atelectasis',
@@ -60,12 +68,9 @@ class XrayNet(nn.Module):
     tunable hyper parameters: embeddings
     """
     def __init__(self):
-        global args
-        # self.blocks = None
-        # self.pool = AdaptivePool2D((2,2)) # 
-        # self.fc = nn.Linear(args["embed_size"], 15)
-
-        self.network = Sequential(
+        global args 
+        super(XrayNet, self).__init__()
+        self.network = nn.Sequential(
                 nn.Conv2d(1,32,kernel_size = 5,padding = 0,stride = 2,bias = False),
                 nn.ELU(inplace=True),
                 BasicBlock(32,32), 
@@ -78,7 +83,8 @@ class XrayNet(nn.Module):
                 nn.Conv2d(128,512,kernel_size = 5,padding = 0,stride = 2,bias = False),
                 nn.ELU(inplace=True),
                 BasicBlock(512,512),
-                nn.AdaptiveAvgPool2d((2,2)))
+                nn.AdaptiveAvgPool2d((2,2))
+        )
         self.fc = nn.Linear(args["embed_size"], 15, bias = False) 
         self.sm = torch.nn.Softmax(dim = 1)
 
@@ -233,19 +239,10 @@ def train_val(net, train_set, val_set):
 
 
 def main():
-    args["batch_size"] = 20
-    args["epochs"] = 20
-    args["num_workers"] = 4
-    args["embed_size"] = 2048
-    args["gpu"] = True
-    if (not torch.cuda.is_available()): args["gpu"] = False
-    args["null_percent"] = 0.2 # specify the percentage of No finding in the dataset
-    args["label_cutoff"] = 0.3 # minimum probability of a softmax output for a valid label
-    args["k"] = 3 # select top k softmax outputs as labels
 
     # load train and val set
-    train_set = get_traindata()
-    val_set = get_valdata()
+    train_set = preprocess.get_traindata(args["batch_size"], args["num_workers"])
+    val_set = preprocess.get_valdata(args["batch_size"], args["num_workers"])
 
     # get net and train
     # net = torch.load("")
@@ -253,7 +250,7 @@ def main():
     train_loss, train_acc, val_err = train_val(net, train_set, val_set)
 
     # test
-    test_set = get_testdata()
+    test_set = preprocess.get_testdata(args["batch_size"], args["num_workers"])
     test(net, test_set)
 
 if __name__ == "__main__":
