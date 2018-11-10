@@ -19,6 +19,30 @@ def get_id_label_list():
 
 def train_val_split():
     """Split the 'data/train_val_list.txt` into two lists: train_list.npy and val_list.npy"""
+    arr = []
+    with open("data/train_val_list.txt", "r") as f:
+        prev_identity = None
+        for i in f:
+            i = i.strip()
+            identity, index = i.split('_')
+            if identity != prev_identity:
+                arr.append([])
+                prev_identity = identity
+            arr[-1].append(i)
+    train_arr = []
+    val_arr = []
+    for a in arr:
+        if np.random.rand() < 0.1 :
+            val_arr.append(a)
+        else:
+            train_arr.append(a)
+
+    with open("train_list.txt", "w") as f:
+        for idx in chain(*train_arr):
+            f.write(idx + "\n")
+    with open("val_list.txt", "w") as f:
+        for idx in chain(*val_arr):
+            f.write(idx + "\n")
 
 def save_npy(mode):
     """ 
