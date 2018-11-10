@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn 
+import torch.nn.functional as F
 from torch.utils.data.dataset import Dataset
 from torch.utils.data import DataLoader
 import numpy as np
@@ -104,12 +105,13 @@ def iou(pred, target):
         pred: a 2d tensor
         target: a 2d tensor
     """
+    pred, target = pred.float(), target.float()
     intersection_array = (pred * target)
-    union_array = pred + target - intersection
+    union_array = pred + target - intersection_array
     intersection = intersection_array.sum(dim = 1)
     union = union_array.sum(dim = 1)
     iou_tensor = intersection/union # a tensor array of iou's
-    batch_iou = int(iou_tensor.sum()) # total iou over a batch 
+    batch_iou = float(iou_tensor.sum()) # total iou over a batch 
 
     return batch_iou
 
@@ -158,10 +160,10 @@ def val(net, val_set):
                 pred_sample = [label for label in label_pred_k[idx] if out_k[idx][label] >= args["label_cutoff"]] # valid labels have softmax >= cutoff 
                 pred.append(pred_sample)
             # convert pred to one hot
+            pred_one_hot = torch.zeros(out.size()).int()
             for i in range(len(pred)):
                 for j in pred[i]:
                     pred_one_hot[i][j] = 1
-            pred_one_hot = torch.zeros(out.size()).int()
             pred_one_hot = pred_one_hot.numpy()
 
             # remove No Finding from pred if necessary
@@ -185,7 +187,6 @@ def test(net, test_set):
             if args["gpu"]:
                 batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
             out = net(batch_data)
-            total += btach_label.size(0)
             out_k,label_pred_k = torch.topk(out, k=args["k"], dim=1) # top k max classes
             pred = []
             for idx in len(out_k):
@@ -206,7 +207,7 @@ def test(net, test_set):
         img_id = np.loadtxt("data/test_list.txt")
         outputs = [(img, label) for img, label in zip(img_id, pred_label)]
     with open("pred.csv", "w") as f:
-        f.write("Image ID,Predicted Label\n")
+        f.write("Image ID, Predicted Label\n")
     with open("pred.csv", "ab") as f:
         np.savetxt(f, outputs, delimiter=',', fmt = "%s")
 
