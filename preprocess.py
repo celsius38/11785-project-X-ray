@@ -1,12 +1,77 @@
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MultiLabelBinarizer
 import cv2
 import os.path
+from sklearn.preprocessing import MultiLabelBinarizer
+from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
 
 IMG_PATHs =["data/images" + str(i) for i in range(1,13)] 
-MAX_SIZE = 10000
+MAX_SIZE = 90000
+
+class CustomDataset(Dataset):
+    def __init__(self, data, label = None): 
+        """ 
+        @Param:
+            data: N x W x H, label is N x K, where K is number of classes
+        """
+        self.data = torch.from_numpy(data) 
+        if(label is not None):
+            label = torch.from_numpy(label)
+        self.label = label
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        d = self.data[index].unsqueeze(0)
+        if self.label is not None:
+            l = self.label[index]
+        else:
+            l = torch.tensor(0)
+        return (d,l)
+
+
+def get_traindata():
+    """
+    @Return:
+        DataLoader of train data with index i
+    """ 
+    global args
+    data, label = np.load("data/train.npy"), np.load("data/train_label.npy")
+    return DataLoader(  CustomDataset(data, label), 
+                        batch_size = args["batch_size"], 
+                        shuffle = True, 
+                        drop_last = True,
+                        num_workers = args["num_workers"] )
+
+def get_valdata():
+    """
+    @Param: 
+    @Return:
+        DataLoader of validation data
+    """
+    global args
+    data, label = np.load("data/val.npy"), np.load("data/val_label.npy")
+    return DataLoader(  CustomDataset(data, label), 
+                        batch_size = args["batch_size"], 
+                        shuffle = False,
+                        drop_last = False,
+                        num_workers = args["num_workers"] )
+
+def get_testdata():
+    """
+    @Return:
+        DataLoader of test data
+    """
+    global args
+    data, label = np.load("data/test.npy"), np.load("data/test_label.npy")
+    return DataLoader(  CustomDataset(data, label), 
+                        batch_size = args["batch_size"], 
+                        shuffle = False,
+                        drop_last = False,
+                        num_workers = args["num_workers"] )
+
 
 def get_id_label_list(): 
     """ @ Return: the entire image_id - label list(using one-hot-encoding) 
@@ -20,6 +85,7 @@ def get_id_label_list():
     label_list = mlb.fit_transform(labels)
     mapping_list = list(mlb.classes_) # fetch the mapping rule used in the binarizer
     return id_list, label_list, mapping_list
+
 
 def train_val_split():
     """Split the 'data/train_val_list.txt` into two lists: train_list.npy and val_list.npy"""
@@ -71,7 +137,7 @@ def save_npy(mode, skip = 0):
         np.save(label_path, label)
         print("saved to {} & {}".format(data_path, label_path))
 
-    id_list, label_list = get_id_label_list()
+    id_list, label_list, mapping_list = get_id_label_list()
     id_idx = 0      # running ptr in the id_list
     dir_idx = 0     # ptr to the directory
     alldata, alllabel = [], []
@@ -88,7 +154,7 @@ def save_npy(mode, skip = 0):
                 dir_idx += 1
                 path = os.path.join(IMG_PATHs[dir_idx], tid)
 
-            data = cv2.imread(path, 0)
+            data = cv2.imread(path, 0)[::4, ::4] # downsampling
             label = label_list[id_idx] 
             alldata.append(data)
             alllabel.append(label)
@@ -113,24 +179,3 @@ def save_npy(mode, skip = 0):
         alllabel = np.array(alllabel)
         save_procedure(alldata, alllabel, file_cnt)
         print("done")
-     
-
-             
-
-        
-             
-            
-            
-
-    
-    
-
-
-
-
-
-
-
-
-
-
