@@ -17,9 +17,9 @@ class CustomDataset(Dataset):
         @Param:
             data: N x W x H, label is N x K, where K is number of classes
         """
-        self.data = torch.from_numpy(data) 
+        self.data = torch.from_numpy(data).float()
         if(label is not None):
-            label = torch.from_numpy(label)
+            label = torch.from_numpy(label).float()
         self.label = label
 
     def __len__(self):

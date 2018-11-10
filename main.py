@@ -90,7 +90,7 @@ class XrayNet(nn.Module):
 
 
     def forward(self, x):
-        out = self.network(self.x) 
+        out = self.network(x)
         out = out.view(out.size(0), -1) # flatten to N x E
         out = self.fc(out) 
         out = self.sm(out) # softmax for prob interpretation
@@ -221,7 +221,7 @@ def train_val(net, train_set, val_set):
         net = net.cuda()
         criterion = criterion.cuda()
 
-    for epoch in args["epochs"]:
+    for epoch in range(args["epochs"]):
         # train
         loss = train(net, epoch, train_set, criterion, optimizer)
 
