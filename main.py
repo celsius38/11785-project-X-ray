@@ -157,11 +157,9 @@ def val(net, val_set):
                 for j in pred[i]:
                     pred_one_hot[i][j] = 1
             pred_one_hot = pred_one_hot.numpy()
-
             # remove No Finding from pred if necessary
             np.apply_along_axis(remove_null, 1, pred_one_hot, ONE_MAPPING.index("No Finding"))
             pred_one_hot = torch.from_numpy(pred_one_hot)
-
             batch_iou = iou(pred_one_hot, batch_label) # average iou score over a batch
             total_iou += batch_iou
             total_sample += batch_label.size(0)
@@ -193,15 +191,13 @@ def test(net, test_set):
             pred_one_hot = pred_one_hot.numpy()
             # remove No Finding from pred if necessary
             np.apply_along_axis(remove_null, 1, pred_one_hot, ONE_MAPPING.index("No Finding"))
-            for one_hot_row in pred_one_hot:
-                label_row = [MAP[idx] for idx in np.flatnonzero(one_hot_row)]
-                pred_label.append('|'.join(label_row))
-        img_id = np.loadtxt("data/test_list.txt")
-        outputs = [(img, label) for img, label in zip(img_id, pred_label)]
-    with open("pred.csv", "w") as f:
-        f.write("Image ID, Predicted Label\n")
-    with open("pred.csv", "ab") as f:
-        np.savetxt(f, outputs, delimiter=',', fmt = "%s")
+            pred_one_hot = torch.from_numpy(pred_one_hot)
+            batch_iou = iou(pred_one_hot, batch_label) # average iou score over a batch
+            total_iou += batch_iou
+            total_sample += batch_label.size(0)
+        acc = total_iou/total_sample # average iou
+        print("Acc: {}".format(acc))
+        return acc
 
 
 def train_val(net, train_set, val_set):
