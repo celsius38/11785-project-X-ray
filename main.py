@@ -139,7 +139,9 @@ def train(net, epoch_id, train_set, criterion, optimizer):
 
         ttl_loss += loss.item()
         if(batch_index % 100 == 0):
-            print("[Epoch {}] Loss: {}".format(epoch_id, ttl_loss/((batch_index + 1) * args["batch_size"])))
+            print("[Epoch {} batch {}] Loss: {}".format(epoch_id, 
+                    batch_index,
+                    ttl_loss/((batch_index + 1) * args["batch_size"])))
     return ttl_loss/((batch_index + 1) * args["batch_size"])
 
 def val(net, val_set):
