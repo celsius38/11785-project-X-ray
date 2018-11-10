@@ -59,8 +59,8 @@ def save_npy(mode, skip = 0):
         skip: skip the first skip number of chunks
     @Note:
       labels are encoded using one-hot-bit encoding
-      images are concatenated into N x C x W x H (N is number of images in a single set, 
-      				C is 1 as black-white, W for width and H for height)
+      images are concatenated into N x W x H (N is number of images in a single set, 
+      				            W for width and H for height)
     """ 
     def save_procedure(data, label, file_cnt):
         """data and label are nparray, file_cnt specify the index """
