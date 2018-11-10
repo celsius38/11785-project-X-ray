@@ -107,12 +107,13 @@ def iou(pred, target):
         pred: a 2d tensor
         target: a 2d tensor
     """
+    pred, target = pred.float(), target.float()
     intersection_array = (pred * target)
-    union_array = pred + target - intersection
+    union_array = pred + target - intersection_array
     intersection = intersection_array.sum(dim = 1)
     union = union_array.sum(dim = 1)
     iou_tensor = intersection/union # a tensor array of iou's
-    batch_iou = int(iou_tensor.sum()) # total iou over a batch 
+    batch_iou = float(iou_tensor.sum()) # total iou over a batch 
 
     return batch_iou
 
@@ -211,7 +212,7 @@ def test(net, test_set):
         img_id = np.loadtxt("data/test_list.txt")
         outputs = [(img, label) for img, label in zip(img_id, pred_label)]
     with open("pred.csv", "w") as f:
-        f.write("Image ID,Predicted Label\n")
+        f.write("Image ID, Predicted Label\n")
     with open("pred.csv", "ab") as f:
         np.savetxt(f, outputs, delimiter=',', fmt = "%s")
 
