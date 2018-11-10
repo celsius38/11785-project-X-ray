@@ -7,15 +7,6 @@ import numpy as np
 from preprocess import get_traindata, get_valdata, get_testdata
 
 args = {}
-args["batch_size"] = 20
-args["epochs"] = 20
-args["num_workers"] = 4
-args["embed_size"] = 2048
-args["gpu"] = True
-if (not torch.cuda.is_available()): args["gpu"] = False
-args["null_percent"] = 0.2 # specify the percentage of No finding in the dataset
-args["label_cutoff"] = 0.3 # minimum probability of a softmax output for a valid label
-args["k"] = 3 # select top k softmax outputs as labels
 
 # one hot encoding mapping
 OHE_MAPPING = ['Atelectasis',
@@ -64,7 +55,6 @@ class BasicBlock(nn.Module):
 
         return out
 
-
 class XrayNet(nn.Module):
     """
     tunable hyper parameters: embeddings
@@ -88,15 +78,16 @@ class XrayNet(nn.Module):
                 nn.Conv2d(128,512,kernel_size = 5,padding = 0,stride = 2,bias = False),
                 nn.ELU(inplace=True),
                 BasicBlock(512,512),
-                nn.AdaptiveAvgPool2d((2,2)),
-                Flatten(),
-                nn.Linear(args["embed_size"], 15 ,bias = False)
-                )
+                nn.AdaptiveAvgPool2d((2,2)))
+        self.fc = nn.Linear(args["embed_size"], 15, bias = False) 
+        self.sm = torch.nn.Softmax(dim = 1)
 
     def forward(self, x):
-        #TODO: output size of embedding
-        final_classes = self.network(self.x)
-        return final_classes
+        out = self.network(self.x) 
+        out = out.view(out.size(0), -1) # flatten to N x E
+        out = self.fc(out) 
+        out = self.sm(out) # softmax for prob interpretation
+        return out
 
 def iou(pred, target):
     """
@@ -212,8 +203,7 @@ def test(net, test_set):
         np.savetxt(f, outputs, delimiter=',', fmt = "%s")
 
 
-
-def train_val(net):
+def train_val(net, train_set, val_set):
     global args
     # criterion = CustomLoss()
     criterion = nn.BCELoss()
@@ -221,17 +211,16 @@ def train_val(net):
             weight_decay=1e-6)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
             mode = "max", factor = 0.1, patience = 1) #reduce lr once acc stop increasing
-    val_set = get_valdata()
+
+
     best_acc = -float("inf")
     if args["gpu"]:
         net = net.cuda()
         criterion = criterion.cuda()
 
     for epoch in args["epochs"]:
-        # train on every set of train data
-        for i in range(args["ttl_trainsets"]):
-            train_set = get_traindata(i)
-            loss = train(net, epoch, train_set, criterion, optimizer)
+        # train
+        loss = train(net, epoch, train_set, criterion, optimizer)
 
         # validation
         acc = val(net, val_set)
@@ -245,8 +234,31 @@ def train_val(net):
             best_acc = acc
             torch.save(net, "epoch{}".format(epoch))
 
+
+def main():
+    args["batch_size"] = 20
+    args["epochs"] = 20
+    args["num_workers"] = 4
+    args["embed_size"] = 2048
+    args["gpu"] = True
+    if (not torch.cuda.is_available()): args["gpu"] = False
+    args["null_percent"] = 0.2 # specify the percentage of No finding in the dataset
+    args["label_cutoff"] = 0.3 # minimum probability of a softmax output for a valid label
+    args["k"] = 3 # select top k softmax outputs as labels
+
+    # load train and val set
+    train_set = get_traindata()
+    val_set = get_valdata()
+
+    # get net and train
+    # net = torch.load("")
+    net = XrayNet()
+    train_loss, train_acc, val_err = train_val(net, train_set, val_set)
+
+    # test
     test_set = get_testdata()
     test(net, test_set)
 
 if __name__ == "__main__":
-    pass
+    main()
+    
