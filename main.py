@@ -155,6 +155,17 @@ def iou(pred, target):
 
     return batch_iou
 
+def remove_null(one_hot, idx_null):
+    """
+    @Param:
+        one_hot: 1d one hot numpy array  
+        idx_null: index of "No Finding" class
+    """
+    if pred_row[idx_null] == 1 and pred_row.sum()>1:
+        pred_row[idx_null] = 0
+    
+        
+
 
 def train(net, epoch_id, train_set, criterion, optimizer):
     global args
@@ -176,6 +187,7 @@ def train(net, epoch_id, train_set, criterion, optimizer):
     return ttl_loss/((batch_index + 1) * args["batch_size"])
 
 def val(net, val_set):
+
     global args
     net = net.eval()
     # TODO: validation returning some accuracy measure
@@ -193,10 +205,16 @@ def val(net, val_set):
                 pred_sample = [label for label in label_pred_k[idx] if out_k[idx][label] >= args["label_cutoff"]] # valid labels have softmax >= cutoff 
                 pred.append(pred_sample)
             # convert pred to one hot
-            pred_one_hot = torch.zeros(out.size()).int()
             for i in range(len(pred)):
                 for j in pred[i]:
                     pred_one_hot[i][j] = 1
+            pred_one_hot = torch.zeros(out.size()).int()
+            pred_one_hot = pred_one_hot.numpy()
+
+            # remove No Finding from pred if necessary
+            np.apply_along_axis(remove_null, 1, pred_one_hot, ONE_MAPPING.index("No Finding"))
+            pred_one_hot = torch.from_numpy(pred_one_hot)
+
             batch_iou = iou(pred_one_hot, batch_label) # average iou score over a batch
             total_iou += batch_iou
             total_sample += batch_label.size(0)
@@ -209,7 +227,7 @@ def test(net, test_set):
     net = net.eval()
 
     with torch.no_grad():
-        for batch_index, (batch_data, batch_label) in enumerate(val_set):
+        for batch_index, (batch_data, batch_label) in enumerate(test_set):
             if args["gpu"]:
                 batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
             out = net(batch_data)
@@ -219,15 +237,22 @@ def test(net, test_set):
             for idx in len(out_k):
                 pred_sample = [label for label in label_pred_k[idx] if out_k[idx][label] >= args["label_cutoff"]] # valid labels have softmax >= cutoff 
                 pred.append(pred_sample)
-            for idx in len(out_k):
-                pred_sample = [label for label in label_pred_k[idx] if out_k[idx][label] >= args["label_cutoff"]] # valid labels have softmax >= cutoff 
-                pred.append(pred_sample)
             # convert pred to one hot
             pred_one_hot = torch.zeros(out.size()).int()
             for i in range(len(pred)):
                 for j in pred[i]:
                     pred_one_hot[i][j] = 1
+            pred_one_hot = torch.zeros(out.size()).int()
+            pred_one_hot = pred_one_hot.numpy()
+            # remove No Finding from pred if necessary
+            np.apply_along_axis(remove_null, 1, pred_one_hot, ONE_MAPPING.index("No Finding"))
             # TODO: translate one-hot prediction to class labels; write output file
+            pred_label = []
+            for one_hot_row in pred_one_hot:
+                label_row = [MAP[idx] for idx in np.flatnonzero(one_hot_row)]
+                pred_label.append('|'.join(label_row))
+
+
 
 def train_val(net):
     global args
