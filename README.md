@@ -1,6 +1,8 @@
 # File Structure
 ```
- - data
+- main.py
+- preprocess.py
+- data
     - images1
         - ...
     - images2
