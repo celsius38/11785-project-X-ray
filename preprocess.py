@@ -9,13 +9,17 @@ IMG_PATHs =["data/images" + str(i) for i in range(1,13)]
 MAX_SIZE = 10000
 
 def get_id_label_list(): 
-    """ @ Return: the entire image_id - label list with the same sequential order""" 
+    """ @ Return: the entire image_id - label list(using one-hot-encoding) 
+                    with the same sequential order,
+                    also return the mapping rule that one-hot-encoding uses
+    """ 
     data_entry = pd.read_csv("data/Data_Entry_2017.csv") 
     id_list = data_entry[["Image Index"]].values.flatten().tolist()
     labels = data_entry.apply(lambda x: x["Finding Labels"].split("|"), axis=1)
     mlb = MultiLabelBinarizer()  
     label_list = mlb.fit_transform(labels)
-    return id_list, label_list
+    mapping_list = list(mlb.classes_) # fetch the mapping rule used in the binarizer
+    return id_list, label_list, mapping_list
 
 def train_val_split():
     """Split the 'data/train_val_list.txt` into two lists: train_list.npy and val_list.npy"""
@@ -44,7 +48,7 @@ def train_val_split():
         for idx in chain(*val_arr):
             f.write(idx + "\n")
 
-def save_npy(mode):
+def save_npy(mode, skip = 0):
     """ 
     for test data specified in the `test_list.txt`, generate a single npy
      file that contains the data and corresponding label in sequential order
@@ -52,6 +56,7 @@ def save_npy(mode):
      sized npy file that contains the data and corresponding label in sequential order
     @Param: 
         mode: "train", "val" or "test"
+        skip: skip the first skip number of chunks
     @Note:
       labels are encoded using one-hot-bit encoding
       images are concatenated into N x C x W x H (N is number of images in a single set, 
@@ -72,17 +77,16 @@ def save_npy(mode):
     alldata, alllabel = [], []
 
     cnt = 0; file_cnt = 0
-    with open("data/test_list.txt", "r") as test_list:
-        for test_id in tqdm(test_list):
-            test_id = test_id.strip()
+    with open("data/{}_list.txt".format(mode), "r") as lst:
+        for tid in tqdm(lst):
+            tid = tid.strip()
             # loop through the index list to find the matching idx 
-            while id_list[id_idx] != test_id : 
+            while id_list[id_idx] != tid:
                 id_idx += 1   
-            path = os.path.join(IMG_PATHs[dir_idx], test_id)
-            if not os.path.isfile(path):
+            path = os.path.join(IMG_PATHs[dir_idx], tid)
+            while not os.path.isfile(path):
                 dir_idx += 1
-                path = os.path.join(IMG_PATHs[dir_idx], test_id)
-                assert(os.path.isfile(path))
+                path = os.path.join(IMG_PATHs[dir_idx], tid)
 
             data = cv2.imread(path, 0)
             label = label_list[id_idx] 
@@ -94,8 +98,12 @@ def save_npy(mode):
             if(cnt == MAX_SIZE):
                 print("reaching limit, now saving to npy...")
                 alldata = np.array(alldata)
-                alllabel = np.array(alllabel)
-                save_procedure(alldata, alllabel, file_cnt)
+                alllabel = np.array(alllabel) 
+                if(file_cnt < skip):
+                    print("[{}/{}] skipped saving...".format(file_cnt + 1, skip))
+                else:
+                    save_procedure(alldata, alllabel, file_cnt) 
+                    print("done")
                 cnt = 0
                 file_cnt += 1 
                 alldata = []
@@ -104,6 +112,7 @@ def save_npy(mode):
         alldata = np.array(alldata)
         alllabel = np.array(alllabel)
         save_procedure(alldata, alllabel, file_cnt)
+        print("done")
      
 
              
