@@ -4,10 +4,11 @@ import torch.nn.functional as F
 from torch.utils.data.dataset import Dataset
 import numpy as np
 import preprocess
+from tqdm import tqdm
 
 args = {}
-args["batch_size"] = 20
-args["epochs"] = 20
+args["batch_size"] = 30
+args["epochs"] = 1
 args["num_workers"] = 4
 args["embed_size"] = 2048
 args["gpu"] = True
@@ -127,7 +128,7 @@ def train(net, epoch_id, train_set, criterion, optimizer):
     global args
     net = net.train()
     ttl_loss = 0
-    for batch_index, (batch_data, batch_label) in enumerate(train_set):
+    for batch_index, (batch_data, batch_label) in enumerate(tqdm(train_set)):
         if args["gpu"]:
             batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
 
@@ -150,13 +151,13 @@ def val(net, val_set):
     with torch.no_grad():
         total_iou = 0
         total_sample = 0
-        for batch_index, (batch_data, batch_label) in enumerate(val_set):
+        for batch_index, (batch_data, batch_label) in enumerate(tqdm(val_set)):
             if args["gpu"]:
                 batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
             out = net(batch_data)
             out_k,label_pred_k = torch.topk(out, k=args["k"], dim=1) # top k max classes
             pred = []
-            for idx in len(out_k):
+            for idx in range(len(out_k)):
                 pred_sample = [label for label in label_pred_k[idx] if out_k[idx][label] >= args["label_cutoff"]] # valid labels have softmax >= cutoff 
                 pred.append(pred_sample)
             # convert pred to one hot
@@ -166,7 +167,7 @@ def val(net, val_set):
                     pred_one_hot[i][j] = 1
             pred_one_hot = pred_one_hot.numpy()
             # remove No Finding from pred if necessary
-            np.apply_along_axis(remove_null, 1, pred_one_hot, ONE_MAPPING.index("No Finding"))
+            np.apply_along_axis(remove_null, 1, pred_one_hot, OHE_MAPPING.index("No Finding"))
             pred_one_hot = torch.from_numpy(pred_one_hot)
             batch_iou = iou(pred_one_hot, batch_label) # average iou score over a batch
             total_iou += batch_iou
@@ -181,7 +182,7 @@ def test(net, test_set):
 
     with torch.no_grad():
         pred_label = []
-        for batch_index, (batch_data, _) in enumerate(test_set):
+        for batch_index, (batch_data, _) in enumerate(tqdm(test_set)):
             if args["gpu"]:
                 batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
             out = net(batch_data)
