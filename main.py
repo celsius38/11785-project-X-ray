@@ -185,7 +185,8 @@ def test(net, test_set):
     net = net.eval()
 
     with torch.no_grad():
-        for batch_index, (batch_data, batch_label) in enumerate(test_set):
+        pred_label = []
+        for batch_index, (batch_data, _) in enumerate(test_set):
             if args["gpu"]:
                 batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
             out = net(batch_data)
@@ -204,11 +205,16 @@ def test(net, test_set):
             pred_one_hot = pred_one_hot.numpy()
             # remove No Finding from pred if necessary
             np.apply_along_axis(remove_null, 1, pred_one_hot, ONE_MAPPING.index("No Finding"))
-            # TODO: translate one-hot prediction to class labels; write output file
-            pred_label = []
             for one_hot_row in pred_one_hot:
                 label_row = [MAP[idx] for idx in np.flatnonzero(one_hot_row)]
                 pred_label.append('|'.join(label_row))
+        img_id = np.loadtxt("data/test_list.txt")
+        outputs = [(img, label) for img, label in zip(img_id, pred_label)]
+    with open("pred.csv", "w") as f:
+        f.write("Image ID,Predicted Label\n")
+    with open("pred.csv", "ab") as f:
+        np.savetxt(f, outputs, delimiter=',', fmt = "%s")
+
 
 
 
