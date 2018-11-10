@@ -12,7 +12,6 @@ args["num_workers"] = 4
 args["embed_size"] = 2048
 args["gpu"] = True
 if (not torch.cuda.is_available()): args["gpu"] = False
-args["ttl_trainsets"] = 3
 args["null_percent"] = 0.2 # specify the percentage of No finding in the dataset
 args["label_cutoff"] = 0.3 # minimum probability of a softmax output for a valid label
 args["k"] = 3 # select top k softmax outputs as labels

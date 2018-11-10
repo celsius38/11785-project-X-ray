@@ -7,7 +7,7 @@ from torch.utils.data.dataset import Dataset
 from tqdm import tqdm
 
 IMG_PATHs =["data/images" + str(i) for i in range(1,13)] 
-MAX_SIZE = 90000
+MAX_SIZE = 50000
 
 class CustomDataset(Dataset):
     def __init__(self, data, label = None): 
