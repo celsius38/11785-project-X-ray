@@ -103,7 +103,6 @@ def iou(pred, target):
         pred: a 2d tensor
         target: a 2d tensor
     """
-    print(pred, target)
     pred, target = pred.float(), target.float()
     intersection_array = (pred * target)
     union_array = pred + target - intersection_array
@@ -146,7 +145,6 @@ def val_test(net, val_set):
     net = net.eval()
     with torch.no_grad():
         total_iou = 0
-        total_sample = 0
         for batch_index, (batch_data, batch_label) in enumerate(tqdm(val_set)):
             if args["gpu"]:
                 batch_data = batch_data.cuda()
@@ -154,7 +152,7 @@ def val_test(net, val_set):
             out = out.detach().cpu()
             top_k, indices = torch.topk(out, k=args["k"], dim=1) # top k max classes
             out.zero_()
-            out.scatter(1, indices, top_k) # clip non-top-k to be zero
+            out.scatter_(1, indices, top_k)     # clip non-top-k to be zero
             out[out < args["label_cutoff"]] = 0 # clip those non-exceeding threshold to be zero
             out = out.numpy()
             # remove No Finding from pred if necessary
@@ -162,8 +160,7 @@ def val_test(net, val_set):
             pred_one_hot = torch.from_numpy(out)
             batch_iou = iou(pred_one_hot, batch_label) # average iou score over a batch
             total_iou += batch_iou
-            total_sample += batch_label.size(0)
-        acc = total_iou/total_sample # average iou
+        acc = total_iou/((batch_index+1)*args["batch_size"])# average iou
         print("Acc: {}".format(acc))
         return acc
 
