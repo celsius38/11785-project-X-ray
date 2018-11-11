@@ -90,10 +90,28 @@ class XrayNet(nn.Module):
         self.fc = nn.Linear(args["embed_size"], 15, bias = False) 
         self.sm = torch.nn.Softmax(dim = 1)
 
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def l2_normalization(self, x):
+        input_size = x.size()
+        buffer = torch.pow(x, 2)
+        norm = torch.sqrt(torch.sum(buffer, 1).add_(1e-10))
+        temp = torch.div(x, norm.view(-1, 1).expand_as(x))
+        x_l2 = temp.view(input_size)
+        return x_l2
+
 
     def forward(self, x):
         out = self.network(x)
         out = out.view(out.size(0), -1) # flatten to N x E
+        out = self.l2_normalization(out)
+        alpha = 16
+        out = out * alpha
         out = self.fc(out) 
         out = self.sm(out) # softmax for prob interpretation
         return out
