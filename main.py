@@ -155,17 +155,12 @@ def val(net, val_set):
             if args["gpu"]:
                 batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
             out = net(batch_data)
-            out_k,label_pred_k = torch.topk(out, k=args["k"], dim=1) # top k max classes
-            pred = []
-            for idx in range(len(out_k)):
-                pred_sample = [label for label in label_pred_k[idx] if out_k[idx][label] >= args["label_cutoff"]] # valid labels have softmax >= cutoff 
-                pred.append(pred_sample)
-            # convert pred to one hot
-            pred_one_hot = torch.zeros(out.size()).int()
-            for i in range(len(pred)):
-                for j in pred[i]:
-                    pred_one_hot[i][j] = 1
-            pred_one_hot = pred_one_hot.numpy()
+            out = out.detach().cpu()
+            top_k, indices = torch.topk(out, k=args["k"], dim=1) # top k max classes
+            out.zero_()
+            out.scatter(1, indices, top_k) # clip non-top-k to be zero
+            out[out < args["label_cutoff"]] = 0 # clip those non-exceeding threshold to be zero
+            out = out.numpy()
             # remove No Finding from pred if necessary
             np.apply_along_axis(remove_null, 1, pred_one_hot, OHE_MAPPING.index("No Finding"))
             pred_one_hot = torch.from_numpy(pred_one_hot)
