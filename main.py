@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 args = {}
 args["batch_size"] = 30
-args["epochs"] = 1
+args["epochs"] = 15
 args["num_workers"] = 4
 args["embed_size"] = 2048
 args["gpu"] = True
@@ -33,6 +33,7 @@ OHE_MAPPING = ['Atelectasis',
         'Pleural_Thickening',
         'Pneumonia',
         'Pneumothorax']
+NOFINDING_IDX = OHE_MAPPING.index("No Finding")
 
 def conv3x3(in_planes, out_planes, stride=1):
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
@@ -114,15 +115,13 @@ def iou(pred, target):
 
     return batch_iou
 
-def remove_null(one_hot, idx_null):
+def remove_null(row):
     """
     @Param:
         one_hot: 1d one hot numpy array  
-        idx_null: index of "No Finding" class
-    """
-    if pred_row[idx_null] == 1 and pred_row.sum()>1:
-        pred_row[idx_null] = 0
-    
+    """ 
+    if row[NOFINDING_IDX] == 1 and row.sum() > 1:
+        row[NOFINDING_IDX] = 0
 
 def train(net, epoch_id, train_set, criterion, optimizer):
     global args
@@ -132,8 +131,8 @@ def train(net, epoch_id, train_set, criterion, optimizer):
         if args["gpu"]:
             batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
 
-        out = net(batch_data)
         optimizer.zero_grad()
+        out = net(batch_data)
         loss = criterion(out, batch_label)
         loss.backward()
         optimizer.step()
@@ -145,7 +144,7 @@ def train(net, epoch_id, train_set, criterion, optimizer):
                     ttl_loss/((batch_index + 1) * args["batch_size"])))
     return ttl_loss/((batch_index + 1) * args["batch_size"])
 
-def val(net, val_set):
+def val_test(net, val_set):
     global args
     net = net.eval()
     with torch.no_grad():
@@ -153,7 +152,7 @@ def val(net, val_set):
         total_sample = 0
         for batch_index, (batch_data, batch_label) in enumerate(tqdm(val_set)):
             if args["gpu"]:
-                batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
+                batch_data = batch_data.cuda()
             out = net(batch_data)
             out = out.detach().cpu()
             top_k, indices = torch.topk(out, k=args["k"], dim=1) # top k max classes
@@ -162,47 +161,14 @@ def val(net, val_set):
             out[out < args["label_cutoff"]] = 0 # clip those non-exceeding threshold to be zero
             out = out.numpy()
             # remove No Finding from pred if necessary
-            np.apply_along_axis(remove_null, 1, pred_one_hot, OHE_MAPPING.index("No Finding"))
-            pred_one_hot = torch.from_numpy(pred_one_hot)
+            np.apply_along_axis(remove_null, 1, out)
+            pred_one_hot = torch.from_numpy(out)
             batch_iou = iou(pred_one_hot, batch_label) # average iou score over a batch
             total_iou += batch_iou
             total_sample += batch_label.size(0)
         acc = total_iou/total_sample # average iou
         print("Acc: {}".format(acc))
         return acc
-
-def test(net, test_set):
-    global args
-    net = net.eval()
-
-    with torch.no_grad():
-        pred_label = []
-        for batch_index, (batch_data, _) in enumerate(tqdm(test_set)):
-            if args["gpu"]:
-                batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
-            out = net(batch_data)
-            out_k,label_pred_k = torch.topk(out, k=args["k"], dim=1) # top k max classes
-            pred = []
-            for idx in len(out_k):
-                pred_sample = [label for label in label_pred_k[idx] if out_k[idx][label] >= args["label_cutoff"]] # valid labels have softmax >= cutoff 
-                pred.append(pred_sample)
-            # convert pred to one hot
-            pred_one_hot = torch.zeros(out.size()).int()
-            for i in range(len(pred)):
-                for j in pred[i]:
-                    pred_one_hot[i][j] = 1
-            pred_one_hot = torch.zeros(out.size()).int()
-            pred_one_hot = pred_one_hot.numpy()
-            # remove No Finding from pred if necessary
-            np.apply_along_axis(remove_null, 1, pred_one_hot, ONE_MAPPING.index("No Finding"))
-            pred_one_hot = torch.from_numpy(pred_one_hot)
-            batch_iou = iou(pred_one_hot, batch_label) # average iou score over a batch
-            total_iou += batch_iou
-            total_sample += batch_label.size(0)
-        acc = total_iou/total_sample # average iou
-        print("Acc: {}".format(acc))
-        return acc
-
 
 def train_val(net, train_set, val_set):
     global args
@@ -212,29 +178,30 @@ def train_val(net, train_set, val_set):
             weight_decay=1e-6)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
             mode = "max", factor = 0.1, patience = 1) #reduce lr once acc stop increasing
-
-
-    best_acc = -float("inf")
     if args["gpu"]:
         net = net.cuda()
         criterion = criterion.cuda()
 
+    best_acc = -float("inf")
+    train_loss = []; val_acc = []
     for epoch in range(args["epochs"]):
         # train
         loss = train(net, epoch, train_set, criterion, optimizer)
+        train_loss.append(loss)
 
         # validation
-        acc = val(net, val_set)
+        acc = val_test(net, val_set)
+        val_acc.append(acc)
 
         # step learning rate
         scheduler.step(acc)
 
         # save model if best
         if acc > best_acc:
-            print("crt: {}, best: {}, saving...".format(dist, best_dist))
+            print("crt: {}, best: {}, saving...".format(acc, best_acc))
             best_acc = acc
             torch.save(net, "epoch{}".format(epoch))
-
+    return train_loss, val_acc
 
 def main():
 
@@ -245,11 +212,11 @@ def main():
     # get net and train
     # net = torch.load("")
     net = XrayNet()
-    train_loss, train_acc, val_err = train_val(net, train_set, val_set)
+    train_loss, val_acc = train_val(net, train_set, val_set)
 
     # test
     test_set = preprocess.get_testdata(args["batch_size"], args["num_workers"])
-    test(net, test_set)
+    val_test(net, test_set)
 
 if __name__ == "__main__":
     main()
