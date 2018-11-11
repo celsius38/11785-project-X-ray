@@ -13,9 +13,8 @@ args["num_workers"] = 4
 args["embed_size"] = 2048
 args["gpu"] = True
 if (not torch.cuda.is_available()): args["gpu"] = False
-args["null_percent"] = 0.2 # specify the percentage of No finding in the dataset
-args["label_cutoff"] = 0.3 # minimum probability of a softmax output for a valid label
-args["k"] = 3 # select top k softmax outputs as labels
+args["label_cutoff"] = 0.2 # minimum probability of a softmax output for a valid label
+args["k"] = 4 # select top k softmax outputs as labels
 
 # one hot encoding mapping
 OHE_MAPPING = ['Atelectasis',
@@ -87,15 +86,14 @@ class XrayNet(nn.Module):
                 BasicBlock(512,512),
                 nn.AdaptiveAvgPool2d((2,2))
         )
-        self.fc = nn.Linear(args["embed_size"], 15, bias = False) 
-        self.sm = torch.nn.Softmax(dim = 1)
-
+        self.fc = nn.Linear(args["embed_size"], 15)
+        # self.sm = torch.nn.Softmax(dim = 1)
 
     def forward(self, x):
         out = self.network(x)
         out = out.view(out.size(0), -1) # flatten to N x E
         out = self.fc(out) 
-        out = self.sm(out) # softmax for prob interpretation
+        out = torch.sigmoid(out)
         return out
 
 def iou(pred, target):
@@ -105,6 +103,7 @@ def iou(pred, target):
         pred: a 2d tensor
         target: a 2d tensor
     """
+    print(pred, target)
     pred, target = pred.float(), target.float()
     intersection_array = (pred * target)
     union_array = pred + target - intersection_array
@@ -112,7 +111,6 @@ def iou(pred, target):
     union = union_array.sum(dim = 1)
     iou_tensor = intersection/union # a tensor array of iou's
     batch_iou = float(iou_tensor.sum()) # total iou over a batch 
-
     return batch_iou
 
 def remove_null(row):
@@ -130,9 +128,8 @@ def train(net, epoch_id, train_set, criterion, optimizer):
     for batch_index, (batch_data, batch_label) in enumerate(tqdm(train_set)):
         if args["gpu"]:
             batch_data, batch_label = batch_data.cuda(), batch_label.cuda()
-
         optimizer.zero_grad()
-        out = net(batch_data)
+        out = net(batch_data) 
         loss = criterion(out, batch_label)
         loss.backward()
         optimizer.step()
@@ -174,8 +171,7 @@ def train_val(net, train_set, val_set):
     global args
     # criterion = CustomLoss()
     criterion = nn.BCELoss()
-    optimizer = torch.optim.Adam(net.parameters(), lr = 1e-3, betas = (0.9, 0.999),
-            weight_decay=1e-6)
+    optimizer = torch.optim.Adam(net.parameters(), lr = 1e-3, betas = (0.9, 0.999))
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
             mode = "max", factor = 0.1, patience = 1) #reduce lr once acc stop increasing
     if args["gpu"]:
