@@ -178,3 +178,42 @@ def save_npy(mode, skip = 0):
         alllabel = np.array(alllabel)
         save_procedure(alldata, alllabel, file_cnt)
         print("done")
+
+def feature_zero_mean(x, xval, xtest):
+    """
+    Make each feature have a mean of zero by subtracting mean along sample axis.
+    Use train statistics to normalize test data.
+    :param x: float32(shape=(samples, features))
+    :param xtest: float32(shape=(samples, features))
+    :return: tuple (x, xtest)
+    """
+    mean = np.mean(x, axis = 0)
+    return x - mean, xval - mean, xtest - mean
+
+def zca(x, xval, xtest, bias=1e-3):
+    """
+    ZCA training data. Use train statistics to normalize test data.
+    :param x: float32(shape=(samples, features)) (assume mean=0)
+    :param xtest: float32(shape=(samples, features))
+    :param bias: bias to add to covariance matrix
+    :return: tuple (x, xtest)
+    """
+    cov = x.T.dot(x)/len(x) + np.eye(x.shape[1]) * bias
+    u,s,_ = np.linalg.svd(cov)
+    w = u.dot(np.diag(1./np.sqrt(s))).dot(u.T)
+    return x.dot(w), xval.dot(w), xtest.dot(w)
+
+def preprocess():
+    x = np.load("data/train.npy")
+    xval = np.load("data/val.npy")
+    xtest = np.load("data/test.npy")
+    print("before: ", x.shape, xval.shape, xtest.shape)
+    x = x.reshape(x.shape[0], -1)
+    xval = xval.reshape(xval.shape[0], -1)
+    xtest = xtest.reshape(xtest.shape[0], -1)
+    print("after: ", x.shape, xval.shape, xtest.shape)
+    x, xval, xtest = feature_zero_mean(x, xval, xtest)
+    x, xval, xtest = zca(x, xval, xtest, bias = 1e-6)
+    np.save("train_trans.npy", x)
+    np.save("val_trans.npy", xval)
+    np.save("test_trans.npy", xtest)
