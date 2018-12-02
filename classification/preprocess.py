@@ -129,7 +129,7 @@ def save_npy(mode, skip = 0):
     """ 
     def save_procedure(data, label, file_cnt):
         """data and label are nparray, file_cnt specify the index """
-        nonlocal mode
+        # nonlocal mode
         data_path = "{}{}.npy".format(mode,file_cnt) 
         label_path = "{}_label{}.npy".format(mode, file_cnt)
         np.save(data_path, data)
@@ -179,7 +179,7 @@ def save_npy(mode, skip = 0):
         save_procedure(alldata, alllabel, file_cnt)
         print("done")
 
-def feature_zero_mean(x, xval, xtest):
+def feature_zero_mean():
     """
     Make each feature have a mean of zero by subtracting mean along sample axis.
     Use train statistics to normalize test data.
@@ -187,21 +187,23 @@ def feature_zero_mean(x, xval, xtest):
     :param xtest: float32(shape=(samples, features))
     :return: tuple (x, xtest)
     """
-    mean = np.mean(x, axis = 0)
-    return x - mean, xval - mean, xtest - mean
-
-
-def preprocess():
     x = np.load("data/train.npy")
     xval = np.load("data/val.npy")
     xtest = np.load("data/test.npy")
-    x = x.reshape(x.shape[0], -1)
-    xval = xval.reshape(xval.shape[0], -1)
-    xtest = xtest.reshape(xtest.shape[0], -1)
-    x = feature_zero_mean(x)
-    np.save("train_trans.npy", x)
-    np.save("val_trans.npy", xval)
-    np.save("test_trans.npy", xtest)
+    x = x.reshape(x.shape[0], -1).astype(np.int16)
+    xval = xval.reshape(xval.shape[0], -1).astype(np.int16)
+    xtest = xtest.reshape(xtest.shape[0], -1).astype(np.int16)
+    print(x.dtype)
+    mean = np.mean(x, axis = 0).astype(np.int16)
+    x -= mean
+    np.save("train_trans.npy", x.reshape(x.shape[0], 256, 256))
+    del(x)
+    xval -= mean
+    np.save("val_trans.npy", xval.reshape(xval.shape[0], 256, 256))
+    del(xval)
+    xtest -= mean
+    np.save("test_trans.npy", xtest.reshape(xtest.shape[0], 256, 256))
 
 if __name__ == "__main__":
-    preprocess()
+    # feature_zero_mean()
+    pass
