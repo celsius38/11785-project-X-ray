@@ -19,9 +19,9 @@ SOS = 0
 EOS = 0
 
 args = {}
-args["train_subsample"]     = -1
+args["train_subsample"]     = 4
 args["val_subsample"]       = -1
-args["batch_size"]          = 16
+args["batch_size"]          = 2
 args["lr"]                  = 1e-4
 args["max_step"]            = 250
 args["random_sample"]       = 20
@@ -81,10 +81,17 @@ def load_data():
     indications = np.load('data/indications.npy')
     impressions = np.load('data/impressions.npy')
 
+    none_index = []
+    for i, f in enumerate(findings):
+        if len(f) == 0:
+            none_index.append(i)
+    full_index = set(np.arange(len(findings)))
+
     # train, dev, test split
-    idx = np.arange(len(data))
+    idx = list(full_index - set(none_index))
     np.random.shuffle(idx)
-    train_idx, dev_idx, test_idx = idx[:6000],idx[6000:6000+735],idx[6000+735:] # 8 : 1 : 1
+    total = len(idx)
+    train_idx, dev_idx, test_idx = idx[:int(total*0.8)],idx[int(total*0.8):int(total*0.9)],idx[int(total*0.9):] # 8 : 1 : 1
 
     # TODO: use findings 
     train_x, train_y= (data[train_idx][:args["train_subsample"]], 
@@ -193,7 +200,7 @@ class XrayNet(nn.Module):
         embed_size          = args["char_embed_size"]
         hidden_size         = args["lstm_hidden_size"]
         self.embedding      = nn.Embedding(vocab_size, embed_size)
-        self.softmax        = nn.LogSoftmax(dim = 1)
+        self.logsoftmax     = nn.LogSoftmax(dim = 1)
         self.lstmcell       = nn.LSTMCell(embed_size, hidden_size)
         self.lstmcell2      = nn.LSTMCell(hidden_size, hidden_size)
         self.character_distribution = nn.Linear(hidden_size, vocab_size) # Projection layer
@@ -212,7 +219,7 @@ class XrayNet(nn.Module):
         embed = self.embedding(input_step)
         hidden_state, cell_state = self.lstmcell(embed, hidden_cell_state)              #(B, H)
         hidden_state2, cell_state2 = self.lstmcell2(hidden_state, hidden_cell_state2)   #(B, H)
-        raw_pred = self.softmax(self.character_distribution(hidden_state2))             #(B, V)
+        raw_pred = self.logsoftmax(self.character_distribution(hidden_state2))             #(B, V)
         return raw_pred, (hidden_state, cell_state), (hidden_state2, cell_state2)
     
     def forward(self, cnn_output, mode, 
@@ -249,6 +256,7 @@ class XrayNet(nn.Module):
         for step in range(max_step):
             raw_pred, hidden_cell_state, hidden_cell_state2 = (
                 self.forward_step(input_step, hidden_cell_state, hidden_cell_state2))
+
             if mode == "train":
                 raw_pred_seq.append(raw_pred.unsqueeze(1)) #(B, 1, vocab_size)
 
@@ -261,7 +269,7 @@ class XrayNet(nn.Module):
                     all_score.append(torch.gather(raw_pred, 1, output.view(-1, 1))) #(B, 1)
             # random
             else:
-                dist = torch.distributions.Categorical(raw_pred)
+                dist = torch.distributions.Categorical(logits=raw_pred)
                 output = dist.sample() #(B, )
                 output_seq.append(output.unsqueeze(1).cpu().detach()) #(B, 1)
                 all_score.append(torch.gather(raw_pred, 1, output.view(-1, 1))) #(B, 1)
@@ -311,10 +319,10 @@ def train(epoch, cnn, lstm, train_loader, optimizer, criterion):
         transript_mask  = (transript_mask <= comp_range).to(args["device"])
         targets_masked  = targets.clone()
         targets_masked[transript_mask] = -1
-
+        
         # backward pass
         loss = criterion(raw_pred_seq.view(-1, args["vocab_size"]),
-                         targets.view(-1))
+                         targets_masked.view(-1))
         perplexity = (loss / ((1 - transript_mask).sum().item())).exp()
         optimizer.zero_grad()
         loss.backward()
