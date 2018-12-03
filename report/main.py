@@ -21,16 +21,16 @@ EOS = 0
 args = {}
 args["train_subsample"]     = -1
 args["val_subsample"]       = -1
+args["batch_size"]          = 16
 args["lr"]                  = 1e-4
 args["max_step"]            = 250
 args["random_sample"]       = 20
-args["vocab_size"]          = 58
-args["batch_size"]          = 2
 args["epochs"]              = 15
 
 # rather fixed
 args["num_workers"]         = 4
 args["device"]              = "cuda" if torch.cuda.is_available() else "cpu"
+args["vocab_size"]          = 58
 
 # model hyper parameters
 args["image_embed_size"]    = 2048
@@ -334,7 +334,7 @@ def validation(cnn, lstm, dev_loader):
     ttl_dist    = 0
     with torch.no_grad():
         for batch_id, (inputs, targets, _) in tqdm(enumerate(dev_loader)):
-            inputs.to(args["device"])
+            inputs = inputs.to(args["device"])
             cnn_out = cnn(inputs)
             _, output_seq, _ = lstm(cnn_out, mode = "val")
 
