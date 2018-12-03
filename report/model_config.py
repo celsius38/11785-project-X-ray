@@ -27,6 +27,8 @@ args["k"] = 4 # select top k softmax outputs as labels
 args["cnn_output_size"] = 512
 args["char_embed_size"] = 256
 
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+
 class CustomDataset(Dataset):
     def __init__(self, data, label = None):
         self._data = data
@@ -175,7 +177,7 @@ class XrayNet(nn.Module):
         score = 0
         batch_size = cnn_output.size(0)
         cell_state = cnn_output
-        hidden_state = torch.zeros(cell_state.shape)
+        hidden_state = torch.zeros(cell_state.shape).to(DEVICE)
         hidden_cell_state = (hidden_state, cell_state) # B x hidden
         hidden_cell_state2 = None
         
@@ -235,6 +237,10 @@ def train(train_loader, cnn, lstm, optimizer, criterion, DEVICE):
     cnn, lstm = cnn.train(), lstm.train()
     total_loss = 0
     for batch_id,(inputs,targets) in tqdm(enumerate(train_loader)): # lists, presorted, preloaded on GPU    # Load data
+        if len(targets) == 0:
+            continue
+        inputs.to(DEVICE)
+#         targets.to(DEVICE)      
         optimizer.zero_grad()
         # Input shape: B x C x H x W = 32 x 1 x 512 x 512
         cnn_out = cnn(inputs)
@@ -253,4 +259,28 @@ def train(train_loader, cnn, lstm, optimizer, criterion, DEVICE):
         total_loss += lpw 
     return total_loss, cnn, lstm
 
-
+def validation(dev_loader, cnn, lstm, DEVICE):
+    cnn, lstm = cnn.eval(), lstm.eval()
+    total_dist = 0
+    with torch.no_grad():
+        for batch_id, (inputs,targets) in tqdm(enumerate(dev_loader)):
+            if len(targets) == 0:
+                continue
+            inputs.to(DEVICE)
+#             targets.to(DEVICE)
+            cnn_out = cnn(inputs)
+            pred_y, _ = lstm(cnn_out, mode = "train", ground_truth = targets) #, teacher_force = 0.9)
+            pred_y = pred_y.detach().cpu().numpy()
+            pred_y = np.argmax(pred_y, axis = 1)
+            targets = targets[0].detach().cpu().numpy()
+            targets_seq = []
+            pred_seq = []
+            targets_seq = int_to_str(targets)
+            pred_seq = int_to_str(pred_y)
+            dist =  distance(targets_seq, pred_seq)
+            if batch_id % 1 == 0:
+                print("At batch",batch_id)
+                print("Validation Distance:",dist)
+            total_dist += dist
+            print("[Validation] pred sample: {}, target: {}".format(pred_seq, targets_seq))
+    return total_dist/ (batch_id + 1)

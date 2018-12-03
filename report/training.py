@@ -16,7 +16,7 @@ from model_config import *
 
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-NUM_EPOCHS = 5
+NUM_EPOCHS = 20
 
 data = np.load('data/data.npy')
 findings = np.load('data/findings.npy')
@@ -38,25 +38,29 @@ test_x = data[test_idx]
 test_y = findings[test_idx]
 
 train_set = CustomDataset(train_x, train_y)
-train_loader = DataLoader(dataset=train_set, batch_size=32, shuffle=True, collate_fn=collate_lines)
+train_loader = DataLoader(dataset=train_set, batch_size=16, shuffle=True, collate_fn=collate_lines)
 
-cnn = ResNet() # image 
-lstm = XrayNet(args["vocab_size"], args["lstm_hidden_size"]) # report
+cnn = ResNet().to(DEVICE) # image 
+lstm = XrayNet(args["vocab_size"], args["lstm_hidden_size"]).to(DEVICE) # report
 optimizer = torch.optim.Adam([{'params':cnn.parameters()}, {'params':lstm.parameters()}],lr = 1e-4)
 criterion = nn.CrossEntropyLoss().to(DEVICE)
 
 
+best_distance = float("inf")
 
 for epoch in range(NUM_EPOCHS):
     loss, cnn, lstm = train(train_loader, cnn, lstm, optimizer, criterion, DEVICE)
     print('='*100)
     print(epoch," training loss:", loss)
-    torch.save(cnn.state_dict(),'./cnn_'+str(epoch) + '.pt')
-    torch.save(lstm.state_dict(),'./lstm_'+str(epoch) + '.pt')
-    
+
     if epoch%1 == 0: 
         distance = validation(dev_loader, cnn, lstm, DEVICE)
         print(epoch," validation distance:", distance)
+        
+    if distance < best_distance:
+        torch.save(cnn.state_dict(),'./cnn_'+str(epoch) + '.pt')
+        torch.save(lstm.state_dict(),'./lstm_'+str(epoch) + '.pt')
+
  
 
 
