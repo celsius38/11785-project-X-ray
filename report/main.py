@@ -19,15 +19,14 @@ SOS = 0
 EOS = 0
 
 args = {}
-args["train_subsample"]     = 2
-args["val_subsample"]       = 2
+args["train_subsample"]     = -1
+args["val_subsample"]       = -1
 args["lr"]                  = 1e-4
 args["max_step"]            = 250
 args["random_sample"]       = 20
 args["vocab_size"]          = 58
 args["batch_size"]          = 2
 args["epochs"]              = 15
-
 
 # rather fixed
 args["num_workers"]         = 4
