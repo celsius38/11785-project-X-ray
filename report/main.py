@@ -19,9 +19,9 @@ SOS = 0
 EOS = 0
 
 args = {}
-args["train_subsample"]     = 4
-args["val_subsample"]       = 4
-args["batch_size"]          = 2
+args["train_subsample"]     = -1
+args["val_subsample"]       = -1
+args["batch_size"]          = 16
 args["lr"]                  = 1e-4
 args["max_step"]            = 250
 args["random_sample"]       = 20
@@ -362,7 +362,7 @@ def test(cnn, lstm, test_loader):
 
     with torch.no_grad():
         for batch_id, (inputs, targets, _) in tqdm(enumerate(test_loader)):
-            inputs.to(args["device"])
+            inputs = inputs.to(args["device"])
             cnn_out = cnn(inputs)
 
             # use greedy search as best for now
