@@ -9,22 +9,17 @@ import json
 from tqdm import tqdm
 from natsort import natsorted, ns
 
+def str_to_int(s):
+    # given a string, turn to lower case and return int list
+    s = s.lower()
+    res = [CHAR_TO_INT[c] for c in s]
+    return res
 
-class CustomDataset(Dataset):
-    def __init__(self, data, label = None):
-        self._data = data
-        self._label = label
-
-    def __len__(self):
-        return len(self._data)
-
-    def __getitem__(self, index):
-        d =  self._data[index]
-        d = torch.from_numpy(d).float()
-        l = torch.tensor([0])
-        if self._label is not None:
-            l = torch.from_numpy(self._label[index]).long()
-        return (d, l)
+def int_to_str(x):
+    # given an int numpy array, return string that corresponds to it
+    res = np.vectorize(INT_TO_CHAR.get)(x)
+    res = res.tolist()
+    return "".join(res)
 
 def target_extractor(path): 
     """
@@ -100,18 +95,6 @@ def get_char_set():
     char_set = set.union(*sets)
     char_set = {c.lower() for c in char_set}
     return sorted(list(char_set))
-
-def str_to_int(s):
-    # given a string, turn to lower case and return int list
-    s = s.lower()
-    res = [CHAR_TO_INT[c] for c in s]
-    return res
-
-def int_to_str(x):
-    # given an int numpy array, return string that corresponds to it
-    res = np.vectorize(INT_TO_CHAR.get)(x)
-    res = res.tolist()
-    return "".join(res)
 
 def transcribe():
     """
