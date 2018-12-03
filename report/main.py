@@ -11,7 +11,7 @@ from torch.nn.utils.rnn import (pad_packed_sequence,
                                 pad_sequence,
                                 pack_padded_sequence,
                                 pack_sequence)
-from preprocess import INT_TO_CHAR, CHAR_TO_INT, int_to_str, str_to_int
+from preprocess import int_to_str, str_to_int, append_file
 import sys
 import Levenshtein
 
@@ -20,12 +20,12 @@ EOS = 0
 
 args = {}
 args["train_subsample"]     = 4
-args["val_subsample"]       = -1
+args["val_subsample"]       = 4
 args["batch_size"]          = 2
 args["lr"]                  = 1e-4
 args["max_step"]            = 250
 args["random_sample"]       = 20
-args["epochs"]              = 15
+args["epochs"]              = 2
 
 # rather fixed
 args["num_workers"]         = 4
@@ -265,7 +265,7 @@ class XrayNet(nn.Module):
             if mode == "train" or mode == "val":
                 output = raw_pred.max(dim = 1)[1] # argmax (B, )
                 if mode == "val":
-                    output_seq.append(output.unsqueeze(1).cpu().detach())
+                    output_seq.append(output.unsqueeze(1).cpu().detach()) #(B, 1)
                     all_score.append(torch.gather(raw_pred, 1, output.view(-1, 1))) #(B, 1)
             # random
             else:
@@ -290,10 +290,10 @@ class XrayNet(nn.Module):
                 idx = (output == EOS).nonzero()
                 if len(idx) == 0: # no <EOS> contained, until final
                     output_fixed.append(output)
-                    score_fixed.append(score.sum().item()/max_step)
-                else: #
+                    score_fixed.append(score.mean().item())
+                else: # <EOS>
                     output_fixed.append(output[:idx[0] + 1])
-                    score_fixed.append(score[:idx[0] + 1].mean())
+                    score_fixed.append(score[:idx[0] + 1].mean().item())
 
         if mode == "train":
             return raw_pred_seq, None, None
@@ -323,7 +323,7 @@ def train(epoch, cnn, lstm, train_loader, optimizer, criterion):
         # backward pass
         loss = criterion(raw_pred_seq.view(-1, args["vocab_size"]),
                          targets_masked.view(-1))
-        perplexity = (loss / ((1 - transript_mask).sum().item())).exp()
+        perplexity = (loss / ((1 - transript_mask).sum()).float()).exp().item()
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -397,10 +397,12 @@ if __name__ == "__main__":
                 train(epoch, cnn, lstm, train_loader, optimizer, criterion))
         print("[Epoch {}] loss: {}, perplexity: {}".format(
                         epoch, epoch_loss, epoch_perplexity))
+        append_file("train_out.csv", epoch_loss, epoch_perplexity)
 
         # val
         dist = validation(cnn, lstm, val_loader)
         print("[Validation] Levenshtein distance:", dist)
+        append_file("val_out.csv", dist)
             
         # step lr
         scheduler.step(dist)
