@@ -21,6 +21,13 @@ def int_to_str(x):
     res = res.tolist()
     return "".join(res)
 
+def append_file(path, *args):
+    with open(path, "a") as f:
+        for arg in args[:-1]:
+            f.write(str(arg) + ",")
+        f.write(str(args[-1]))
+        f.write("\n")
+
 def target_extractor(path): 
     """
     @Param:
