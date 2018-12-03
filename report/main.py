@@ -407,6 +407,6 @@ if __name__ == "__main__":
         if dist < best_dist:
             print("crt: {}, best: {}, saving...".format(dist, best_dist))
             best_dist = dist
-            torch.save(cnn, "cnn_{}.pt".format(epoch))
-            torch.save(lstm, "lstm_{}.pt".format(epoch))
+            torch.save(cnn, "saved_models/cnn_{}.pt".format(epoch))
+            torch.save(lstm, "saved_models/lstm_{}.pt".format(epoch))
     test(cnn, lstm, test_loader)
