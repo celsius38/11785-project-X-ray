@@ -22,10 +22,10 @@ args = {}
 args["train_subsample"]     = 4
 args["val_subsample"]       = 4
 args["batch_size"]          = 2
-args["lr"]                  = 1e-4
+args["lr"]                  = 1e-3
 args["max_step"]            = 250
 args["random_sample"]       = 20
-args["epochs"]              = 2
+args["epochs"]              = 5
 
 # rather fixed
 args["num_workers"]         = 4
@@ -186,9 +186,9 @@ class ResNet(nn.Module):
 
     def forward(self, x):
         out = self.network(x)
-        out = out.view(out.size(0), -1) # flatten to N x E
+        out = out.view(out.size(0), -1) #(B,-1)
         out = self.l2_normalization(out)
-        out = self.fc(out) 
+        out = self.fc(out) #(B, cnn_output_size)
         return out
 
 
@@ -265,6 +265,7 @@ class XrayNet(nn.Module):
             if mode == "train" or mode == "val":
                 output = raw_pred.max(dim = 1)[1] # argmax (B, )
                 if mode == "val":
+                    # print("raw_pred, output: ", raw_pred, output)
                     output_seq.append(output.unsqueeze(1).cpu().detach()) #(B, 1)
                     all_score.append(torch.gather(raw_pred, 1, output.view(-1, 1))) #(B, 1)
             # random
@@ -284,6 +285,7 @@ class XrayNet(nn.Module):
         if mode == "val" or mode == "test": # calculate loss and each output length
             output_seq  = torch.cat(output_seq, dim=1) #(B, L)
             all_score   = torch.cat(all_score, dim=1)  #(B, L)
+            # print("output_seq: ", output_seq)
             output_fixed = []
             score_fixed  = []
             for output, score in zip(output_seq, all_score):
@@ -311,7 +313,7 @@ def train(epoch, cnn, lstm, train_loader, optimizer, criterion):
         # Input shape: (B, C, H, W) = (B, 1, 512, 512)
         cnn_out = cnn(inputs) # (B, cnn_output_size)
         # TODO:
-        raw_pred_seq, _, _  = lstm(cnn_out, mode = "train", ground_truth = targets) #, teacher_force = 0.9)
+        raw_pred_seq, _, _  = lstm(cnn_out, mode = "train", ground_truth = targets)
 
         # mask the padding part of generated seq to be -1 and ignore for loss
         comp_range      = torch.arange(target_len.max().item()).unsqueeze(0)
