@@ -20,13 +20,14 @@ EOS = 0
 
 args = {}
 
-args["train_subsample"]     = 4
-args["val_subsample"]       = 4
-args["batch_size"]          = 2
+args["train_subsample"]     = -1
+args["val_subsample"]       = -1
+args["test_subsample"]      = -1
+args["batch_size"]          = 16
 args["lr"]                  = 1e-3
 args["max_step"]            = 250
 args["random_sample"]       = 20
-args["epochs"]              = 5
+args["epochs"]              = 15
 
 # rather fixed
 args["num_workers"]         = 4
@@ -99,7 +100,8 @@ def load_data():
                        findings[train_idx][:args["train_subsample"]])
     dev_x, dev_y    = (data[dev_idx][:args["val_subsample"]],
                        findings[dev_idx][:args["val_subsample"]])
-    test_x, test_y = data[test_idx], findings[test_idx]
+    test_x, test_y = (data[test_idx][:args["test_subsample"]],
+                      findings[test_idx][:args["test_subsample"]])
 
     train_set   = CustomDataset(train_x, train_y)
     val_set     = CustomDataset(dev_x, dev_y)
@@ -200,16 +202,18 @@ class XrayNet(nn.Module):
         vocab_size          = args["vocab_size"]
         embed_size          = args["char_embed_size"]
         hidden_size         = args["lstm_hidden_size"]
+        cnn_output_size     = args["cnn_output_size"]
         self.embedding      = nn.Embedding(vocab_size, embed_size)
         self.logsoftmax     = nn.LogSoftmax(dim = 1)
-        self.lstmcell       = nn.LSTMCell(embed_size, hidden_size)
+        self.lstmcell       = nn.LSTMCell(cnn_output_size + embed_size, hidden_size)
         self.lstmcell2      = nn.LSTMCell(hidden_size, hidden_size)
         self.character_distribution = nn.Linear(hidden_size, vocab_size) # Projection layer
      
-    def forward_step(self, input_step, hidden_cell_state, hidden_cell_state2):    
+    def forward_step(self, input_step, cnn_output, hidden_cell_state, hidden_cell_state2):    
         """
         @Param: 
             input_step: (B, ) input chars
+            cnn_output: (B, cnn_output_size)
             hidden_cell_state: (hidden_state,  cell_state), both (B, lstm_hidden_size)
             hidden_cell_state2:(hidden_state2, cell_state2), both (B, lstm_hidden_size)
         @Return:
@@ -217,7 +221,8 @@ class XrayNet(nn.Module):
             hidden_state, cell_state    (B, lstm_hidden_size):
             hidden_state2, cell_state2  (B, lstm_hidden_size):
         """
-        embed = self.embedding(input_step)
+        embed = self.embedding(input_step) # (B, char_embed_size)
+        embed = torch.cat((cnn_output, embed), dim = 1) #(B, char_embed_size + cnn_output_size)
         hidden_state, cell_state = self.lstmcell(embed, hidden_cell_state)              #(B, H)
         hidden_state2, cell_state2 = self.lstmcell2(hidden_state, hidden_cell_state2)   #(B, H)
         raw_pred = self.logsoftmax(self.character_distribution(hidden_state2))             #(B, V)
@@ -245,10 +250,8 @@ class XrayNet(nn.Module):
         output_seq    = []
         all_score = []
 
-        # initialize first hidden state with cnn output
-        cell_state = cnn_output
-        hidden_state = torch.zeros(cell_state.shape).to(args["device"])
-        hidden_cell_state = (hidden_state, cell_state) # B x hidden
+        # initialize hidden state
+        hidden_cell_state = None
         hidden_cell_state2 = None
         
         # initialize first char as <sos>
@@ -256,7 +259,8 @@ class XrayNet(nn.Module):
 
         for step in range(max_step):
             raw_pred, hidden_cell_state, hidden_cell_state2 = (
-                self.forward_step(input_step, hidden_cell_state, hidden_cell_state2))
+                self.forward_step(input_step, cnn_output, 
+                                  hidden_cell_state, hidden_cell_state2))
 
             if mode == "train":
                 raw_pred_seq.append(raw_pred.unsqueeze(1)) #(B, 1, vocab_size)
@@ -383,13 +387,16 @@ def test(cnn, lstm, test_loader):
 
 if __name__ == "__main__":
     train_loader, val_loader, test_loader = load_data()
-    cnn = ResNet().to(args["device"])
-    lstm = XrayNet().to(args["device"])
+    cnn     = ResNet().to(args["device"])
+    lstm    = XrayNet().to(args["device"])
+    # cnn     = torch.load("saved_models/cnn_1.pt", map_location = args["device"])
+    # lstm    = torch.load("saved_models/lstm_1.py", map_location = args["device"])
+
     optimizer = torch.optim.Adam([{'params':cnn.parameters()}, 
                                     {'params':lstm.parameters()}],
                                     lr = args["lr"])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
-                    mode="min", factor=0.1, patience=5,
+                    mode="min", factor=0.1, patience=3,
                     min_lr=1e-6)
     criterion = nn.NLLLoss(reduction="sum", ignore_index=-1).to(args["device"])
     best_dist = float("inf")
