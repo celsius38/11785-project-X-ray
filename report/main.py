@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
-import os
+import os, sys
 import random
 from tqdm import tqdm
 from torch.nn.utils.rnn import (pad_packed_sequence,
@@ -12,7 +12,7 @@ from torch.nn.utils.rnn import (pad_packed_sequence,
                                 pack_padded_sequence,
                                 pack_sequence)
 from preprocess import int_to_str, str_to_int, append_file
-import sys
+from torchvision import transforms
 import Levenshtein
 
 SOS = 0
@@ -25,11 +25,12 @@ args["val_subsample"]       = -1
 args["test_subsample"]      = -1
 args["batch_size"]          = 16
 args["lr"]                  = 1e-3
-args["max_step"]            = 250
 args["random_sample"]       = 20
 args["epochs"]              = 15
+args["teacher_force"]       = 0.8 
 
 # rather fixed
+args["max_step"]            = 250
 args["num_workers"]         = 4
 args["device"]              = "cuda" if torch.cuda.is_available() else "cpu"
 args["vocab_size"]          = 58
@@ -41,21 +42,27 @@ args["lstm_hidden_size"]    = 512
 args["char_embed_size"]     = 256
 
 class CustomDataset(Dataset):
-    def __init__(self, data, label = None):
+    def __init__(self, data, label=None, transform=None):
         self._data = data
-        # append <eos> for each label
-        label = [np.append(y,0) for y in label]
         self._label = label
+        self.transform = transform
 
     def __len__(self):
         return len(self._data)
 
     def __getitem__(self, index):
         global args
+        # prepare data
         d =  self._data[index]
-        d = torch.from_numpy(d).float()
+        d = torch.from_numpy(d).float().unsqueeze(0) # (1, H, W)
+        if self.transform is not None:
+            d = self.transform(d)
+
+        # prepare label
         l = torch.tensor([0])
         if self._label is not None:
+            l = self._label[index]
+            l = np.append(l, 0) # append <eos> for label
             l = torch.from_numpy(self._label[index]).long()
         return (d, l)
     
@@ -63,15 +70,16 @@ def collate_lines(batch):
     """
     @Param:
         batch: list of tensor tuple: (data, label) of len B
+                data of (1, H, W), label of (L, )
     @Return 
-        data        : (B, 1, W, H) (channel is 1) 
+        data        : (B, 1, H, W) (channel is 1) 
         target      : padded_seq (B, L)
         target_len  : tensor (B, )
     """
     batch   = sorted(batch, key = lambda x: len(x[0]), reverse = True)
-    data    = [b[0].unsqueeze(0) for b in batch] # B of (1, W, H)
-    data    = torch.cat(data, dim = 0).unsqueeze(1) #(B, 1, W, H)
-    target  = [b[1] for b in batch] # B of (L, )
+    data    = [b[0].unsqueeze(0) for b in batch]    # B of (1, 1, H, W)
+    data    = torch.cat(data, dim = 0)              #(B, 1, H, W)
+    target  = [b[1] for b in batch]                 # B of (L, )
     target_len = torch.tensor([len(t) for t in target])
     target  = pad_sequence(target, batch_first = True)
     return data, target, target_len
@@ -84,6 +92,7 @@ def load_data():
     impressions = np.load('data/impressions.npy')
 
     none_index = []
+    # TODO: use findings 
     for i, f in enumerate(findings):
         if len(f) == 0:
             none_index.append(i)
@@ -94,8 +103,7 @@ def load_data():
     np.random.shuffle(idx)
     total = len(idx)
     train_idx, dev_idx, test_idx = idx[:int(total*0.8)],idx[int(total*0.8):int(total*0.9)],idx[int(total*0.9):] # 8 : 1 : 1
-
-    # TODO: use findings 
+    
     train_x, train_y= (data[train_idx][:args["train_subsample"]], 
                        findings[train_idx][:args["train_subsample"]])
     dev_x, dev_y    = (data[dev_idx][:args["val_subsample"]],
@@ -103,7 +111,15 @@ def load_data():
     test_x, test_y = (data[test_idx][:args["test_subsample"]],
                       findings[test_idx][:args["test_subsample"]])
 
-    train_set   = CustomDataset(train_x, train_y)
+    transform = transforms.Compose([
+                    transforms.ToPILImage(),
+                    transforms.RandomRotation(15),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomHorizontalFlip(),
+                    transforms.ToTensor()
+                ])
+
+    train_set   = CustomDataset(train_x, train_y, transform=transform)
     val_set     = CustomDataset(dev_x, dev_y)
     test_set    = CustomDataset(test_x, test_y)
     return (DataLoader( dataset=train_set, 
@@ -229,7 +245,7 @@ class XrayNet(nn.Module):
         return raw_pred, (hidden_state, cell_state), (hidden_state2, cell_state2)
     
     def forward(self, cnn_output, mode, 
-                ground_truth = None, teacher_force = 0.9): 
+                ground_truth = None):
         """
         @Param:
             cnn_output: (B, H)
@@ -280,7 +296,7 @@ class XrayNet(nn.Module):
                 output_seq.append(output.unsqueeze(1).cpu().detach()) #(B, 1)
                 all_score.append(torch.gather(raw_pred, 1, output.view(-1, 1))) #(B, 1)
             
-            if mode == "train" and np.random.rand() < teacher_force:
+            if mode == "train" and np.random.rand() < args["teacher_force"]:
                 input_step = ground_truth[:,step] 
             else:
                 input_step = output
