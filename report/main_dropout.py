@@ -19,14 +19,14 @@ SOS = 0
 EOS = 0
 
 args = {}
-
-args["train_subsample"]     = 4
-args["val_subsample"]       = 4
-args["batch_size"]          = 2
-args["lr"]                  = 1e-3
+args["train_subsample"]     = -1
+args["val_subsample"]       = -1
+args["batch_size"]          = 16
+args["lr"]                  = 1e-4
 args["max_step"]            = 250
 args["random_sample"]       = 20
-args["epochs"]              = 5
+args["epochs"]              = 20
+args["dropout_ratio"]       = 0.5
 
 # rather fixed
 args["num_workers"]         = 4
@@ -156,15 +156,19 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__()
         self.network = nn.Sequential(
                 nn.Conv2d(1,32,kernel_size = 5,padding = 0,stride = 2,bias = False),
+                nn.Dropout2d(p=args["dropout_ratio"]),
                 nn.ELU(inplace=True),
                 BasicBlock(32,32), 
                 nn.Conv2d(32,64,kernel_size = 5,padding = 0,stride = 2,bias = False),
+                nn.Dropout2d(p=args["dropout_ratio"]),
                 nn.ELU(inplace=True),
                 BasicBlock(64,64),  
                 nn.Conv2d(64,128,kernel_size = 5,padding = 0,stride = 2,bias = False),
+                nn.Dropout2d(p=args["dropout_ratio"]),
                 nn.ELU(inplace=True),
                 BasicBlock(128,128), 
                 nn.Conv2d(128,512,kernel_size = 5,padding = 0,stride = 2,bias = False),
+                nn.Dropout2d(p=args["dropout_ratio"]),
                 nn.ELU(inplace=True),
                 BasicBlock(512,512),
                 nn.AdaptiveAvgPool2d((2,2))
@@ -187,10 +191,43 @@ class ResNet(nn.Module):
 
     def forward(self, x):
         out = self.network(x)
-        out = out.view(out.size(0), -1) #(B,-1)
+        out = out.view(out.size(0), -1) # flatten to N x E
         out = self.l2_normalization(out)
-        out = self.fc(out) #(B, cnn_output_size)
+        out = self.fc(out) 
         return out
+
+
+
+class LockedDropout(nn.Module):
+    '''
+    Dropout for lstm cells
+    '''
+    def __init__(self, p=0.5):
+        self.p = p
+        super().__init__()
+
+    def forward(self, x):
+        """
+        Args:
+            x (:class:`torch.FloatTensor` [batch size, (sequence length, ) rnn hidden size]):
+        """
+        if not self.training or not self.p:
+            return x
+        if isinstance(x, torch.Tensor):
+            seq = x
+        elif isinstance(x, torch.nn.utils.rnn.PackedSequence):
+            seq, seq_len = pad_packed_sequence(x, batch_first = True)
+        seq = seq.clone()
+        mask = seq.new_empty(1, seq.size(1), requires_grad=False).bernoulli_(1 - self.p)
+        mask = mask.div_(1 - self.p)
+        mask = mask.expand_as(seq)
+        res  = seq * mask
+        if isinstance(x, torch.Tensor):
+            return res
+        elif isinstance(x, torch.nn.utils.rnn.PackedSequence):
+            return pack_padded_sequence(res, seq_len, batch_first = True)
+
+
 
 
 class XrayNet(nn.Module):
@@ -205,6 +242,7 @@ class XrayNet(nn.Module):
         self.lstmcell       = nn.LSTMCell(embed_size, hidden_size)
         self.lstmcell2      = nn.LSTMCell(hidden_size, hidden_size)
         self.character_distribution = nn.Linear(hidden_size, vocab_size) # Projection layer
+        self.dropout = LockedDropout(p=args["dropout_ratio"])
      
     def forward_step(self, input_step, hidden_cell_state, hidden_cell_state2):    
         """
@@ -219,6 +257,7 @@ class XrayNet(nn.Module):
         """
         embed = self.embedding(input_step)
         hidden_state, cell_state = self.lstmcell(embed, hidden_cell_state)              #(B, H)
+        hidden_state = self.dropout(hidden_state)
         hidden_state2, cell_state2 = self.lstmcell2(hidden_state, hidden_cell_state2)   #(B, H)
         raw_pred = self.logsoftmax(self.character_distribution(hidden_state2))             #(B, V)
         return raw_pred, (hidden_state, cell_state), (hidden_state2, cell_state2)
@@ -266,7 +305,6 @@ class XrayNet(nn.Module):
             if mode == "train" or mode == "val":
                 output = raw_pred.max(dim = 1)[1] # argmax (B, )
                 if mode == "val":
-                    # print("raw_pred, output: ", raw_pred, output)
                     output_seq.append(output.unsqueeze(1).cpu().detach()) #(B, 1)
                     all_score.append(torch.gather(raw_pred, 1, output.view(-1, 1))) #(B, 1)
             # random
@@ -286,7 +324,6 @@ class XrayNet(nn.Module):
         if mode == "val" or mode == "test": # calculate loss and each output length
             output_seq  = torch.cat(output_seq, dim=1) #(B, L)
             all_score   = torch.cat(all_score, dim=1)  #(B, L)
-            # print("output_seq: ", output_seq)
             output_fixed = []
             score_fixed  = []
             for output, score in zip(output_seq, all_score):
@@ -314,7 +351,7 @@ def train(epoch, cnn, lstm, train_loader, optimizer, criterion):
         # Input shape: (B, C, H, W) = (B, 1, 512, 512)
         cnn_out = cnn(inputs) # (B, cnn_output_size)
         # TODO:
-        raw_pred_seq, _, _  = lstm(cnn_out, mode = "train", ground_truth = targets)
+        raw_pred_seq, _, _  = lstm(cnn_out, mode = "train", ground_truth = targets) #, teacher_force = 0.9)
 
         # mask the padding part of generated seq to be -1 and ignore for loss
         comp_range      = torch.arange(target_len.max().item()).unsqueeze(0)
@@ -385,6 +422,11 @@ if __name__ == "__main__":
     train_loader, val_loader, test_loader = load_data()
     cnn = ResNet().to(args["device"])
     lstm = XrayNet().to(args["device"])
+
+    # load trained model
+    cnn = torch.load('saved_models/cnn_4.pt', map_location=args["device"])
+    lstm = torch.load('saved_models/lstm_4.pt', map_location=args["device"])
+
     optimizer = torch.optim.Adam([{'params':cnn.parameters()}, 
                                     {'params':lstm.parameters()}],
                                     lr = args["lr"])
