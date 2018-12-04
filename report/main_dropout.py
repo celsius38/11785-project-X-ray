@@ -22,10 +22,11 @@ args = {}
 args["train_subsample"]     = -1
 args["val_subsample"]       = -1
 args["batch_size"]          = 16
-args["lr"]                  = 1e-3
+args["lr"]                  = 1e-4
 args["max_step"]            = 250
 args["random_sample"]       = 20
 args["epochs"]              = 20
+args["dropout_ratio"]       = 0.5
 
 # rather fixed
 args["num_workers"]         = 4
@@ -155,19 +156,19 @@ class ResNet(nn.Module):
         super(ResNet, self).__init__()
         self.network = nn.Sequential(
                 nn.Conv2d(1,32,kernel_size = 5,padding = 0,stride = 2,bias = False),
-                nn.Dropout2d(p=0.2),
+                nn.Dropout2d(p=args["dropout_ratio"]),
                 nn.ELU(inplace=True),
                 BasicBlock(32,32), 
                 nn.Conv2d(32,64,kernel_size = 5,padding = 0,stride = 2,bias = False),
-                nn.Dropout2d(p=0.2),
+                nn.Dropout2d(p=args["dropout_ratio"]),
                 nn.ELU(inplace=True),
                 BasicBlock(64,64),  
                 nn.Conv2d(64,128,kernel_size = 5,padding = 0,stride = 2,bias = False),
-                nn.Dropout2d(p=0.2),
+                nn.Dropout2d(p=args["dropout_ratio"]),
                 nn.ELU(inplace=True),
                 BasicBlock(128,128), 
                 nn.Conv2d(128,512,kernel_size = 5,padding = 0,stride = 2,bias = False),
-                nn.Dropout2d(p=0.2),
+                nn.Dropout2d(p=args["dropout_ratio"]),
                 nn.ELU(inplace=True),
                 BasicBlock(512,512),
                 nn.AdaptiveAvgPool2d((2,2))
@@ -201,7 +202,7 @@ class LockedDropout(nn.Module):
     '''
     Dropout for lstm cells
     '''
-    def __init__(self, p=0.2):
+    def __init__(self, p=0.5):
         self.p = p
         super().__init__()
 
@@ -241,7 +242,7 @@ class XrayNet(nn.Module):
         self.lstmcell       = nn.LSTMCell(embed_size, hidden_size)
         self.lstmcell2      = nn.LSTMCell(hidden_size, hidden_size)
         self.character_distribution = nn.Linear(hidden_size, vocab_size) # Projection layer
-        self.dropout = LockedDropout(p=0.2)
+        self.dropout = LockedDropout(p=args["dropout_ratio"])
      
     def forward_step(self, input_step, hidden_cell_state, hidden_cell_state2):    
         """
@@ -421,6 +422,11 @@ if __name__ == "__main__":
     train_loader, val_loader, test_loader = load_data()
     cnn = ResNet().to(args["device"])
     lstm = XrayNet().to(args["device"])
+
+    # load trained model
+    cnn = torch.load('saved_models/cnn_4.pt', map_location=args["device"])
+    lstm = torch.load('saved_models/lstm_4.pt', map_location=args["device"])
+
     optimizer = torch.optim.Adam([{'params':cnn.parameters()}, 
                                     {'params':lstm.parameters()}],
                                     lr = args["lr"])
