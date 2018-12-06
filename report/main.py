@@ -20,14 +20,15 @@ EOS = 0
 
 args = {}
 
-args["train_subsample"]     = -1
+args["train_subsample"]     = 4
 args["val_subsample"]       = -1
 args["test_subsample"]      = -1
-args["batch_size"]          = 16
+args["batch_size"]          = 2
 args["lr"]                  = 1e-3
 args["random_sample"]       = 20
 args["epochs"]              = 15
-args["teacher_force"]       = 0.8 
+args["teacher_force"]       = 0.8
+args["drop_out"]            = 0.5
 
 # rather fixed
 args["max_step"]            = 250
@@ -210,6 +211,34 @@ class ResNet(nn.Module):
         out = self.fc(out) #(B, cnn_output_size)
         return out
 
+class LockedDropout(nn.Module):
+    def __init__(self, p=args["drop_out"]):
+        self.p = p
+        super().__init__()
+
+    def forward(self, x):
+        """
+        Args:
+            x (:class:`torch.FloatTensor` [batch size, (sequence length, ) rnn hidden size]):
+        """
+        if not self.training or not self.p:
+            return x
+        if isinstance(x, torch.Tensor):        
+            seq = x
+        elif isinstance(x, torch.nn.utils.rnn.PackedSequence):
+            seq, seq_len = pad_packed_sequence(x, batch_first = True)
+        seq = seq.clone()
+        if(len(seq.size()) == 2): # lstm cell
+            mask = seq.new_empty(1, seq.size(1), requires_grad=False).bernoulli_(1 - self.p)
+        elif(len(seq.size()) == 3):
+            mask = seq.new_empty(1, seq.size(1), seq.size(2), requires_grad=False).bernoulli_(1 - self.p)
+        mask = mask.div_(1 - self.p)
+        mask = mask.expand_as(seq)
+        res  = seq * mask
+        if isinstance(x, torch.Tensor):
+            return res
+        elif isinstance(x, torch.nn.utils.rnn.PackedSequence):
+            return pack_padded_sequence(res, seq_len, batch_first = True)
 
 class XrayNet(nn.Module):
     def __init__(self):
@@ -220,9 +249,11 @@ class XrayNet(nn.Module):
         hidden_size         = args["lstm_hidden_size"]
         cnn_output_size     = args["cnn_output_size"]
         self.embedding      = nn.Embedding(vocab_size, embed_size)
-        self.logsoftmax     = nn.LogSoftmax(dim = 1)
         self.lstmcell       = nn.LSTMCell(cnn_output_size + embed_size, hidden_size)
+        self.dropout1       = LockedDropout()
         self.lstmcell2      = nn.LSTMCell(hidden_size, hidden_size)
+        self.dropout2       = LockedDropout()
+        self.logsoftmax     = nn.LogSoftmax(dim = 1)
         self.character_distribution = nn.Linear(hidden_size, vocab_size) # Projection layer
      
     def forward_step(self, input_step, cnn_output, hidden_cell_state, hidden_cell_state2):    
@@ -240,8 +271,10 @@ class XrayNet(nn.Module):
         embed = self.embedding(input_step) # (B, char_embed_size)
         embed = torch.cat((cnn_output, embed), dim = 1) #(B, char_embed_size + cnn_output_size)
         hidden_state, cell_state = self.lstmcell(embed, hidden_cell_state)              #(B, H)
+        hidden_state = self.dropout1(hidden_state)
         hidden_state2, cell_state2 = self.lstmcell2(hidden_state, hidden_cell_state2)   #(B, H)
-        raw_pred = self.logsoftmax(self.character_distribution(hidden_state2))             #(B, V)
+        hidden_state2 = self.dropout2(hidden_state2)
+        raw_pred = self.logsoftmax(self.character_distribution(hidden_state2))          #(B, V)
         return raw_pred, (hidden_state, cell_state), (hidden_state2, cell_state2)
     
     def forward(self, cnn_output, mode, 
