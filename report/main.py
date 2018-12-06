@@ -189,6 +189,7 @@ class ResNet(nn.Module):
                 nn.AdaptiveAvgPool2d((2,2))
         )
         self.fc = nn.Linear(args["image_embed_size"], args['cnn_output_size'], bias = False) 
+        self.bn = nn.BatchNorm1d(args["cnn_output_size"])
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
@@ -196,19 +197,11 @@ class ResNet(nn.Module):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
 
-    def l2_normalization(self, x):
-        input_size = x.size()
-        buffer = torch.pow(x, 2)
-        norm = torch.sqrt(torch.sum(buffer, 1).add_(1e-10))
-        temp = torch.div(x, norm.view(-1, 1).expand_as(x))
-        x_l2 = temp.view(input_size)
-        return x_l2
-
     def forward(self, x):
         out = self.network(x)
         out = out.view(out.size(0), -1) #(B,-1)
-        out = self.l2_normalization(out)
         out = self.fc(out) #(B, cnn_output_size)
+        out = self.bn(out)
         return out
 
 class LockedDropout(nn.Module):
