@@ -2,14 +2,15 @@ import torch
 import torch.nn as nn 
 import torch.nn.functional as F
 from torch.utils.data.dataset import Dataset
+from sklearn.metrics import roc_curve, auc
 import numpy as np
 import preprocess
 from tqdm import tqdm
 
 args = {}
-args["train_subsample"] = 8
-args["val_subsample"]   = 8
-args["test_subsample"]  = 8
+args["train_subsample"] = -1
+args["val_subsample"]   = -1
+args["test_subsample"]  = -1
 args["batch_size"]      = 8
 args["epochs"]          = 2
 
@@ -223,12 +224,49 @@ def train_val(net, train_set, val_set):
             torch.save(net, "saved_models/epoch{}".format(epoch))
     return train_loss, val_iou
 
+def roc_auc(net):
+    test_data, test_label = get_testdata()
+    # get scores
+    scores = []
+    with torch.no_grad():
+        for batch_id, (batch_data, _) in tqdm(enumerate(test_data)):
+            out = net(batch_data)
+            scores.append(out.detach().cpu().numpy())
+    scores = np.concatenate(scores, axis = 0) #(N, num_classes)
+
+    # compute roc_curve
+    fpr, tpr = dict(), dict()
+    roc_auc = dict()
+    for i, dis in enumerate(OHE_MAPPING):
+        fpr[dis], tpr[dis] = roc_curve(test_label[:, i], scores[:, i])
+        roc_auc[dis] = auc(fpr[dis], tpr[dis])
+    fpr["micro"], tpr["micro"], _ = roc_curve(labels.ravel(), scores.ravel())
+    roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
+
+    # plots
+    fig, ax = plt.subplots(figsize=(12,12))
+    ax.plot(fpr["micro"], tpr["micro"],
+             label='micro-average ROC curve (area = {0:0.2f})'
+                   ''.format(roc_auc["micro"]),
+             color='deeppink', linestyle=':', linewidth=8)
+    colors = ["crimson", "red", "salmon", "coral", "wheat", "gold", "orange", "olive", "lime", "aqua", "azure", "blue", "navy", "violet", "purple"]
+    for dis, color in zip(OHE_MAPPING, colors):
+        plt.plot(fpr[dis], tpr[dis], color=color, lw=2,
+                 label='ROC curve of class {0} (area = {1:0.2f})'
+                 ''.format(dis, roc_auc[dis]))
+    ax.plot([0, 1], [0, 1], 'k--')
+    ax.set_xlabel('False Positive Rate')
+    ax.set_ylabel('True Positive Rate')
+    ax.set_title('ROC curve of various disease')
+    ax.legend(loc="lower right")
+    plt.savefig("figures/fig.png")
+
 def main():
     print("Running with {}".format(args))
 
     # load train and val set
-    train_set = preprocess.get_traindata(args["batch_size"], args["num_workers"])
-    val_set = preprocess.get_valdata(args["batch_size"], args["num_workers"])
+    train_set = preprocess.get_traindata(args["batch_size"], args["num_workers"], args["train_subsample"])
+    val_set = preprocess.get_valdata(args["batch_size"], args["num_workers"], args["val_subsample"])
 
     # get net and train
     # net = torch.load("")
@@ -236,7 +274,7 @@ def main():
     train_loss, val_acc = train_val(net, train_set, val_set)
 
     # test
-    test_set = preprocess.get_testdata(args["batch_size"], args["num_workers"])
+    test_set = preprocess.get_testdata(args["batch_size"], args["num_workers"], args["test_subsample"])
     validation(net, test_set)
 
 if __name__ == "__main__":

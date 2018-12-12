@@ -35,45 +35,45 @@ class CustomDataset(Dataset):
         return (d,l)
 
 
-def get_traindata(batch_size, num_workers):
+def get_traindata(batch_size, num_workers, num_sample):
     """
     @Return:
         DataLoader of train data with index i
     """ 
     data, label = np.load("data/train.npy"), np.load("data/train_label.npy")
-    data, label = data[:main.args["train_subsample"]], label[:main.args["train_subsample"]]
+    data, label = data[:num_sample], label[:num_sample]
     return DataLoader(  CustomDataset(data, label), 
                         batch_size = batch_size,
                         shuffle = True, 
                         drop_last = True,
                         num_workers = num_workers)
 
-def get_valdata(batch_size, num_workers):
+def get_valdata(batch_size, num_workers, num_sample):
     """
     @Param: 
     @Return:
         DataLoader of validation data
     """
     data, label = np.load("data/val.npy"), np.load("data/val_label.npy")
-    data, label = data[:main.args["val_subsample"]], label[:main.args["val_subsample"]]
+    data, label = data[:num_sample], label[:num_sample]
     return DataLoader(  CustomDataset(data, label), 
                         batch_size = batch_size,
                         shuffle = False,
                         drop_last = False,
                         num_workers = num_workers )
 
-def get_testdata(batch_size, num_workers):
+def get_testdata(batch_size, num_workers, num_sample):
     """
     @Return:
         DataLoader of test data
     """
     data, label = np.load("data/test.npy"), np.load("data/test_label.npy")
-    data, label = data[:main.args["test_subsample"]], label[:main.args["test_subsample"]]
-    return DataLoader(  CustomDataset(data, label), 
+    data, label = data[:num_sample], label[:num_sample]
+    return (DataLoader(  CustomDataset(data, None), 
                         batch_size = batch_size,
                         shuffle = False,
                         drop_last = False,
-                        num_workers = num_workers )
+                        num_workers = num_workers ), label)
 
 
 def get_id_label_list(): 
