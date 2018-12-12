@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import cv2
 import os.path
+import main
 from sklearn.preprocessing import MultiLabelBinarizer
 from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
@@ -40,6 +41,7 @@ def get_traindata(batch_size, num_workers):
         DataLoader of train data with index i
     """ 
     data, label = np.load("data/train.npy"), np.load("data/train_label.npy")
+    data, label = data[:main.args["train_subsample"]], label[:main.args["train_subsample"]]
     return DataLoader(  CustomDataset(data, label), 
                         batch_size = batch_size,
                         shuffle = True, 
@@ -53,6 +55,7 @@ def get_valdata(batch_size, num_workers):
         DataLoader of validation data
     """
     data, label = np.load("data/val.npy"), np.load("data/val_label.npy")
+    data, label = data[:main.args["val_subsample"]], label[:main.args["val_subsample"]]
     return DataLoader(  CustomDataset(data, label), 
                         batch_size = batch_size,
                         shuffle = False,
@@ -65,6 +68,7 @@ def get_testdata(batch_size, num_workers):
         DataLoader of test data
     """
     data, label = np.load("data/test.npy"), np.load("data/test_label.npy")
+    data, label = data[:main.args["test_subsample"]], label[:main.args["test_subsample"]]
     return DataLoader(  CustomDataset(data, label), 
                         batch_size = batch_size,
                         shuffle = False,
