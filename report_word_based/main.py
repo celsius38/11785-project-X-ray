@@ -13,6 +13,7 @@ from torch.nn.utils.rnn import (pad_packed_sequence,
                                 pack_sequence)
 from preprocess import int_to_str, str_to_int, append_file
 from torchvision import transforms
+from nltk.translate.bleu_score import sentence_bleu
 
 SOS = 0
 EOS = 0
@@ -20,26 +21,26 @@ EOS = 0
 args = {}
 
 args["train_subsample"]     = 4
-args["val_subsample"]       = -1
-args["test_subsample"]      = -1
+args["val_subsample"]       = 4 
+args["test_subsample"]      = 4
 args["batch_size"]          = 2
 args["lr"]                  = 1e-3
-args["random_sample"]       = 20
+args["random_sample"]       = 40
 args["epochs"]              = 15
 args["teacher_force"]       = 0.8
 args["drop_out"]            = 0.5
 
 # rather fixed
-args["max_step"]            = 250
+args["max_step"]            = 20
 args["num_workers"]         = 4
 args["device"]              = "cuda" if torch.cuda.is_available() else "cpu"
-args["vocab_size"]          = 58
+args["vocab_size"]          = 4498
 
 # model hyper parameters
 args["image_embed_size"]    = 2048
 args["cnn_output_size"]     = 512
 args["lstm_hidden_size"]    = 512
-args["char_embed_size"]     = 256
+args["word_embed_size"]     = 128
 
 class CustomDataset(Dataset):
     def __init__(self, data, label=None, transform=None):
@@ -88,8 +89,8 @@ def load_data():
     global args
     data        = np.load('data/data.npy')
     findings    = np.load('data/findings.npy')
-    indications = np.load('data/indications.npy')
-    impressions = np.load('data/impressions.npy')
+    # indications = np.load('data/indications.npy')
+    # impressions = np.load('data/impressions.npy')
 
     none_index = []
     # TODO: use findings 
@@ -237,7 +238,7 @@ class XrayNet(nn.Module):
         global args 
         super(XrayNet, self).__init__()
         vocab_size          = args["vocab_size"]
-        embed_size          = args["char_embed_size"]
+        embed_size          = args["word_embed_size"]
         hidden_size         = args["lstm_hidden_size"]
         cnn_output_size     = args["cnn_output_size"]
         self.embedding      = nn.Embedding(vocab_size, embed_size)
@@ -384,10 +385,21 @@ def train(epoch, cnn, lstm, train_loader, optimizer, criterion):
                     ttl_loss/(batch_id +1), ttl_perplexity/(batch_id + 1)))
     return ttl_loss/(batch_id + 1), ttl_perplexity/(batch_id + 1)
 
+def compute_bleu(ref, sent):
+    """
+    @param: ref and sent are both str
+    """
+    ref = ref.split()
+    sent = sent.split()
+    if len(ref >= 4):
+        return sentence_bleu([ref], sent)
+    else:
+        return sentence_bleu([ref], sent, weights = tuple([1/len(ref)]*len(ref)))
+
 def validation(cnn, lstm, dev_loader):
     global args
     cnn, lstm   = cnn.eval(), lstm.eval()
-    ttl_dist    = 0
+    ttl_score    = 0
     with torch.no_grad():
         for batch_id, (inputs, targets, _) in tqdm(enumerate(dev_loader)):
             inputs = inputs.to(args["device"])
@@ -398,10 +410,10 @@ def validation(cnn, lstm, dev_loader):
             output_seq = [int_to_str(out.numpy()) for out in output_seq]
             targets_seq = [int_to_str(tar.numpy()) for tar in targets]
             # comp distance
-            dist = [Levenshtein.distance(out, tar) for out, tar in zip(output_seq, targets_seq)]
-            ttl_dist += np.mean(dist)
+            score = [sentence_bleu(tar, out) for tar, out in zip(targets_seq, output_seq)]
+            ttl_score += np.mean(np.log(score))
     print("[Validation] pred sample: {}, target: {}".format(output_seq, targets_seq))
-    return ttl_dist/ (batch_id + 1)
+    return ttl_score/ (batch_id + 1)
 
 def test(cnn, lstm, test_loader):
     global args
@@ -437,10 +449,10 @@ if __name__ == "__main__":
                                     {'params':lstm.parameters()}],
                                     lr = args["lr"])
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 
-                    mode="min", factor=0.1, patience=3,
+                    mode="max", factor=0.1, patience=3,
                     min_lr=1e-6)
     criterion = nn.NLLLoss(reduction="sum", ignore_index=-1).to(args["device"])
-    best_dist = float("inf")
+    best_score = -float("inf")
 
     for epoch in range(args["epochs"]):
         # train
@@ -451,15 +463,15 @@ if __name__ == "__main__":
         append_file("train_out.csv", epoch_loss, epoch_perplexity)
 
         # val
-        dist = validation(cnn, lstm, val_loader)
-        print("[Validation] Levenshtein distance:", dist)
-        append_file("val_out.csv", dist)
+        score = validation(cnn, lstm, val_loader)
+        print("[Validation] Log Bleu score:", score)
+        append_file("val_out.csv", score)
             
         # step lr
-        scheduler.step(dist)
-        if dist < best_dist:
-            print("crt: {}, best: {}, saving...".format(dist, best_dist))
-            best_dist = dist
+        scheduler.step(score)
+        if score > best_score:
+            print("crt: {}, best: {}, saving...".format(score, best_score))
+            best_score = score
             torch.save(cnn, "saved_models/cnn_{}.pt".format(epoch))
             torch.save(lstm, "saved_models/lstm_{}.pt".format(epoch))
     test(cnn, lstm, test_loader)
