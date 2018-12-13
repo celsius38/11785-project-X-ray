@@ -439,6 +439,7 @@ def test(cnn, lstm, test_loader):
     return predictions
 
 if __name__ == "__main__":
+    print("Run with {}".format(args))
     train_loader, val_loader, test_loader = load_data()
     cnn     = ResNet().to(args["device"])
     lstm    = XrayNet().to(args["device"])
