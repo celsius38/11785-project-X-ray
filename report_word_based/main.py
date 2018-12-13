@@ -20,10 +20,10 @@ EOS = 0
 
 args = {}
 
-args["train_subsample"]     = 4
-args["val_subsample"]       = 4 
-args["test_subsample"]      = 4
-args["batch_size"]          = 2
+args["train_subsample"]     = -1
+args["val_subsample"]       = -1
+args["test_subsample"]      = -1
+args["batch_size"]          = 32
 args["lr"]                  = 1e-3
 args["random_sample"]       = 40
 args["epochs"]              = 15
